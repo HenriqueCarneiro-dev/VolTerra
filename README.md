@@ -1,9 +1,52 @@
 # VolTerra
-### Descrição Breve do Jogo (Versão Atualizada)
 
-O *Central de Energia* é um jogo 2D de estratégia e gerenciamento em tempo real no qual o jogador atua como o operador de uma usina elétrica nacional, com foco em agilidade e tomada de decisão:
+Jogo de terminal em C de gerenciamento de uma usina elétrica nacional.
 
-* *Controle Binário Direto:* Para facilitar a jogabilidade e a programação em C, o painel de controle utiliza chaves simples de *Ligar/Desligar* (enviar ou não enviar energia) para cada região do país.
-* *Gestão de Cota e Blackouts:* Com uma produção finita de energia, o jogador precisa equilibrar o fornecimento entre as zonas. Regiões desabastecidas entram em estado de alerta e iniciam uma contagem regressiva para o blackout.
-* *Minigames de Eventos (Tratamento de Colisão):* Quando eventos locais ou emergências acontecem (como um show ou queda de energia em prédios governamentais), o jogador precisa resolver minigames interativos — como *guiar um fio por um labirinto de circuitos* ou *conectar cabos desembaralhados*. Essa mecânica atende perfeitamente à exigência de detecção de colisão do edital.
-* *Progressão Gradual:* O jogo inicia de forma simples e escala em dificuldade a cada noite, aumentando a quantidade de regiões ativas e a frequência de chamados de emergência.
+## Sobre o jogo
+
+(Escreva 2 a 3 parágrafos: objetivo, regiões liga/desliga, cota de energia,
+blackouts, minigames de eventos, progressão por noite.)
+
+## Controles
+
+| Tecla | Ação |
+|---|---|
+| (preencher conforme o jogo) | ... |
+
+## Como compilar e jogar
+
+Requisitos: Linux ou macOS (no Windows, use WSL ou VM) e GCC.
+
+```
+git clone <link-do-repositorio>
+cd volterra
+make run
+```
+
+## Vídeo de demonstração
+
+<link do vídeo>
+
+## Requisitos da disciplina
+
+Onde cada conceito é usado (preencher no final, com o que foi implementado):
+
+- Structs: ...
+- Ponteiros: ...
+- Alocação dinâmica de memória: ...
+- Listas encadeadas: ...
+- Matrizes: ...
+- Escrita e leitura em arquivo: ...
+
+## Equipe
+
+- Nome 1 (@github)
+- Nome 2 (@github)
+- Nome 3 (@github)
+
+## Créditos
+
+Usa a biblioteca [cli-lib](https://github.com/tgfb/cli-lib) (licença BSD-3-Clause),
+mantida em `lib/` sem alterações.
+
+Disciplina Programação Imperativa e Funcional 2026.2, CESAR School.
