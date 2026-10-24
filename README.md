@@ -136,9 +136,9 @@ A lógica do jogo (`jogo.c` e `regiao.c`) não desenha nada, e o desenho (`desen
 
 ## Equipe
 
-- Nome 1 (@github)
-- Nome 2 (@github)
-- Nome 3 (@github)
+- Jose Henrique Carneiro ([@HenriqueCarneiro-dev](https://github.com/HenriqueCarneiro-dev))
+- Caio Henrique de Sena Belmont ([@BelmontBeta](https://github.com/BelmontBeta)
+- Gustavo Cavalcanti Neves ([@GustavoCavalcantiN](https://github.com/GustavoCavalcantiN)
 
 Projeto desenvolvido na disciplina de Programação Imperativa e Funcional 2026.2, CESAR School.
 
