@@ -57,26 +57,140 @@ static bool PontoNoPoligono(Vector2 p, Vector2 *v, int n)
 {
     bool dentro = false;
     for (int i = 0, j = n - 1; i < n; j = i++) {
-        if (((v[i].y > p.y) != (v[j].y > p.y)) &&
-            (p.x < (v[j].x - v[i].x) * (p.y - v[i].y) / (v[j].y - v[i].y) + v[i].x))
-            dentro = !dentro;
+        bool cruza =  ((v[i].y > p.y) != (v[j].y > p.y));
+
+        if (cruza){
+            float intersecaoX = 
+                (v[j].x - v[i].x) * (p.y - v[i].y)/
+                (v[j].y - v[i].y) + v[i].x;
+
+            if(p.x < intersecaoX){
+                dentro = !dentro;
+            }
+        }
     }
+
     return dentro;
 }
 
 // Preenche polígono qualquer usando triângulos a partir do centro (leque)
-static void PreencherPoligono(Vector2 *v, int n, Vector2 centro, Color cor)
+static void PreencherPoligono(Vector2 *pontos, int quantidade, Color cor)
 {
-    for (int i = 0; i < n; i++) {
-        Vector2 a = v[i];
-        Vector2 b = v[(i + 1) % n];
-        // garante sentido anti-horário exigido pelo raylib
-        Vector2 ab = { b.x - a.x, b.y - a.y };
-        Vector2 ac = { centro.x - a.x, centro.y - a.y };
-        float cruz = ab.x * ac.y - ab.y * ac.x;
-        if (cruz > 0) DrawTriangle(centro, b, a, cor);
-        else          DrawTriangle(centro, a, b, cor);
+    Vector2 centro = {0.0f, 0.0f};
+
+    for(int i=0;  i< quantidade; i++){
+        centro.x += pontos[i].x;
+        centro.y += pontos[i].y;
     }
+
+    centro.x /= quantidade;
+    centro.y /= quantidade;
+
+    for(int i=0; i<quantidade; i++){
+        DrawTriangle(
+            centro,
+            pontos[i],
+            pontos[(i + 1) % quantidade],
+            cor
+        );
+    }
+}
+
+static void DesenharContorno(Vector2 *pontos, int quantidade, float espessura, Color cor){
+    for(int i=0; i<quantidade; i++){
+        DrawLineEx(
+            pontos[i],
+            pontos[(i+1) % quantidade],
+            espessura,
+            cor
+        );
+    }
+}
+
+static void DesenhoIconeFonte(TipoFonte fonte, Vector2 c, float tempo){
+switch (fonte) {
+        case FONTE_HIDRO:
+            DrawRectangle(c.x - 18, c.y - 10, 36, 22, (Color){65, 75, 95, 255});
+            DrawRectangle(c.x - 23, c.y + 12, 46, 5, (Color){50, 140, 240, 255});
+
+            for (int i = 0; i < 3; i++) {
+                float deslocamento = fmodf(tempo * 24.0f + i * 9.0f, 18.0f);
+                DrawCircle(
+                    c.x - 10 + i * 10,
+                    c.y - 4 + deslocamento,
+                    2.5f,
+                    SKYBLUE
+                );
+            }
+            break;
+
+        case FONTE_EOLICA: {
+            float angulo = tempo * 120.0f;
+
+            DrawLineEx(
+                (Vector2){c.x, c.y - 5},
+                (Vector2){c.x, c.y + 23},
+                4,
+                RAYWHITE
+            );
+
+            for (int i = 0; i < 3; i++) {
+                float a = (angulo + i * 120.0f) * DEG2RAD;
+                Vector2 ponta = {
+                    c.x + cosf(a) * 23.0f,
+                    c.y - 5 + sinf(a) * 23.0f
+                };
+
+                DrawLineEx((Vector2){c.x, c.y - 5}, ponta, 4, RAYWHITE);
+            }
+
+            DrawCircle(c.x, c.y - 5, 5, YELLOW);
+            break;
+        }
+
+        case FONTE_SOLAR:
+            DrawCircle(c.x + 15, c.y - 14, 8, YELLOW);
+            DrawRectangle(c.x - 24, c.y - 2, 38, 23, (Color){20, 55, 125, 255});
+            DrawLine(c.x - 24, c.y + 9, c.x + 14, c.y + 9, SKYBLUE);
+            DrawLine(c.x - 5, c.y - 2, c.x - 5, c.y + 21, SKYBLUE);
+            DrawLine(c.x + 7, c.y - 2, c.x + 7, c.y + 21, SKYBLUE);
+            break;
+
+        case FONTE_NUCLEAR:
+            DrawTriangle(
+                (Vector2){c.x - 19, c.y + 19},
+                (Vector2){c.x + 19, c.y + 19},
+                (Vector2){c.x - 10, c.y - 13},
+                LIGHTGRAY
+            );
+
+            DrawTriangle(
+                (Vector2){c.x + 10, c.y - 13},
+                (Vector2){c.x - 10, c.y - 13},
+                (Vector2){c.x + 19, c.y + 19},
+                LIGHTGRAY
+            );
+
+            DrawCircle(c.x + 21, c.y - 17, 6, Fade(WHITE, 0.75f));
+            DrawCircle(c.x + 29, c.y - 22, 5, Fade(WHITE, 0.5f));
+            break;
+
+        case FONTE_BIOMASSA:
+            DrawEllipse(c.x, c.y, 12, 19, GREEN);
+            DrawLineEx(
+                (Vector2){c.x, c.y + 19},
+                (Vector2){c.x, c.y - 16},
+                2,
+                DARKGREEN
+            );
+            DrawTriangle(
+                (Vector2){c.x - 6, c.y + 25},
+                (Vector2){c.x + 6, c.y + 25},
+                (Vector2){c.x, c.y + 12 + sinf(tempo * 5.0f) * 2.0f},
+                ORANGE
+            );
+            break;
+    } 
 }
 
 static void ContornoPoligono(Vector2 *v, int n, float espessura, Color cor)
@@ -245,118 +359,405 @@ static void DesenharBarraBateria(float x, float y, float largura, float altura,
 
 int main(void)
 {
-    InitWindow(LARGURA, ALTURA, "VolTerra - Parte 1");
+    InitWindow(LARGURA, ALTURA, "VolTerra - A crise das cinco noites");
     SetTargetFPS(60);
-
-    // Mapa estilizado (coordenadas em pixels, região central da tela)
+    SetRandomSeed((unsigned int)GetTime());
+    
     Regiao regioes[NUM_REGIOES] = {
-        { "Norte", "Hidreletrica", FONTE_HIDRO, (Color){46, 139, 87, 255},
-          { {380,90}, {640,70}, {760,150}, {740,260}, {560,290}, {400,250}, {340,170} }, 7,
-          {560, 180}, 100 },
-
-        { "Nordeste", "Eolica", FONTE_EOLICA, (Color){218, 165, 32, 255},
-          { {760,150}, {900,170}, {960,260}, {900,350}, {780,380}, {740,260} }, 6,
-          {850, 270}, 100 },
-
-        { "Centro-Oeste", "Solar", FONTE_SOLAR, (Color){210, 105, 30, 255},
-          { {560,290}, {740,260}, {780,380}, {720,450}, {560,450}, {470,360} }, 6,
-          {630, 365}, 100 },
-
-        { "Sudeste", "Nuclear", FONTE_NUCLEAR, (Color){160, 82, 160, 255},
-          { {780,380}, {900,350}, {880,450}, {800,520}, {720,500}, {720,450} }, 6,
-          {800, 440}, 100 },
-
-        { "Sul", "Hidreletrica", FONTE_HIDRO, (Color){65, 105, 225, 255},
-          { {560,450}, {720,450}, {720,500}, {680,580}, {600,610}, {540,540} }, 6,
-          {630, 520}, 100 }
+        {
+            "Norte", "Hidreletrica", FONTE_HIDRO, (Color){46, 139, 87, 255},
+            {{380,90}, {640,70}, {760,150}, {740,260}, {560,290}, {400,250}, {340,170}},
+            7, {560,180}, 100.0f, 0.90f, 0.72f, 20.0f, false, 0.0f
+        },
+        {
+            "Nordeste", "Eolica", FONTE_EOLICA, (Color){218, 165, 32, 255},
+            {{760,150}, {900,170}, {960,260}, {900,350}, {780,380}, {740,260}},
+            6, {850,270}, 100.0f, 0.95f, 0.72f, 50.0f, true, 0.0f
+        },
+        {
+            "Centro-Oeste", "Solar", FONTE_SOLAR, (Color){210, 105, 30, 255},
+            {{560,290}, {740,260}, {780,380}, {720,450}, {560,450}, {470,360}},
+            6, {630,365}, 100.0f, 0.88f, 0.70f, 20.0f, false, 0.0f
+        },
+        {
+            "Sudeste", "Nuclear", FONTE_NUCLEAR, (Color){160, 82, 160, 255},
+            {{780,380}, {900,350}, {880,450}, {800,520}, {720,500}, {720,450}},
+            6, {800,440}, 100.0f, 0.92f, 0.78f, 50.0f, true, 0.0f
+        },
+        {
+            "Sul", "Hidreletrica", FONTE_HIDRO, (Color){65, 105, 225, 255},
+            {{560,450}, {720,450}, {720,500}, {680,580}, {600,610}, {540,540}},
+            6, {630,520}, 100.0f, 0.88f, 0.70f, 20.0f, false, 0.0f
+        }
     };
 
-    int selecionada = 0;   // região selecionada (WASD ou mouse)
-    int hover = -1;
+    int selecionada = NORTE;
+    int noite = 1;
+    int origemTransferencia = -1;
+
+    float tempoNoite = 0.0f;
+    float tempoJogo = 0.0f;
+    float mensagemTempo = 0.0f;
+
+    bool jogoEncerrado = false;
+    bool vitoria = false;
+
+    char mensagem[160] = "Mantenha as cinco regioes acima do limite!";
+    TipoEvento evento = EVENTO_NORMAL;
 
     while (!WindowShouldClose()) {
-        float t = (float)GetTime();
+        float dt = GetFrameTime();
+        float tempo = (float)GetTime();
         Vector2 mouse = GetMousePosition();
 
-        /* --- Entrada: mouse --- */
-        hover = -1;
-        for (int i = 0; i < NUM_REGIOES; i++) {
-            if (PontoNoPoligono(mouse, regioes[i].pontos, regioes[i].numPontos)) {
-                hover = i;
-                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) selecionada = i;
+        if (!jogoEncerrado) {
+            tempoNoite += dt;
+            tempoJogo += dt;
+
+            if (IsKeyPressed(KEY_W) || IsKeyPressed(KEY_A) ||
+                IsKeyPressed(KEY_S) || IsKeyPressed(KEY_D)) {
+                int novo = selecionada;
+
+                if (IsKeyPressed(KEY_W)) {
+                    if (selecionada == SUL) novo = CENTRO_OESTE;
+                    else if (selecionada == CENTRO_OESTE) novo = NORTE;
+                    else if (selecionada == SUDESTE) novo = NORDESTE;
+                }
+
+                if (IsKeyPressed(KEY_S)) {
+                    if (selecionada == NORTE) novo = CENTRO_OESTE;
+                    else if (selecionada == CENTRO_OESTE) novo = SUL;
+                    else if (selecionada == NORDESTE) novo = SUDESTE;
+                }
+
+                if (IsKeyPressed(KEY_A)) {
+                    if (selecionada == NORDESTE) novo = NORTE;
+                    else if (selecionada == SUDESTE) novo = CENTRO_OESTE;
+                    else if (selecionada == CENTRO_OESTE) novo = SUL;
+                }
+
+                if (IsKeyPressed(KEY_D)) {
+                    if (selecionada == NORTE) novo = NORDESTE;
+                    else if (selecionada == CENTRO_OESTE) novo = SUDESTE;
+                    else if (selecionada == SUL) novo = CENTRO_OESTE;
+                }
+
+                selecionada = novo;
             }
-        }
 
-        /* --- Entrada: WASD (move a seleção para a região mais próxima na direção) --- */
-        Vector2 dir = {0, 0};
-        if (IsKeyPressed(KEY_W)) dir.y = -1;
-        if (IsKeyPressed(KEY_S)) dir.y =  1;
-        if (IsKeyPressed(KEY_A)) dir.x = -1;
-        if (IsKeyPressed(KEY_D)) dir.x =  1;
-
-        if (dir.x != 0 || dir.y != 0) {
-            int melhor = selecionada;
-            float melhorDist = 1e9f;
-            Vector2 origem = regioes[selecionada].centro;
             for (int i = 0; i < NUM_REGIOES; i++) {
-                if (i == selecionada) continue;
-                Vector2 d = { regioes[i].centro.x - origem.x, regioes[i].centro.y - origem.y };
-                float proj = d.x * dir.x + d.y * dir.y;   // quanto está na direção
-                if (proj <= 0) continue;
-                float dist = sqrtf(d.x * d.x + d.y * d.y);
-                if (dist < melhorDist) { melhorDist = dist; melhor = i; }
+                if (PontoNoPoligono(mouse, regioes[i].pontos, regioes[i].numPontos) &&
+                    IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+                    selecionada = i;
+                }
             }
-            selecionada = melhor;
+
+            // E: seleciona a regiao de onde enviar energia.
+            if (IsKeyPressed(KEY_E)) {
+                int melhorOrigem = -1;
+                float maiorBateria = regioes[selecionada].bateria;
+
+                for (int i = 0; i < NUM_REGIOES; i++) {
+                    if (i != selecionada && regioes[i].bateria > maiorBateria) {
+                        maiorBateria = regioes[i].bateria;
+                        melhorOrigem = i;
+                    }
+                }
+
+                if (melhorOrigem >= 0 && regioes[melhorOrigem].bateria >= 12.0f) {
+                    regioes[melhorOrigem].bateria -= 12.0f;
+                    regioes[selecionada].bateria += 9.0f;
+
+                    if (regioes[selecionada].bateria > 100.0f) {
+                        regioes[selecionada].bateria = 100.0f;
+                    }
+
+                    origemTransferencia = melhorOrigem;
+                    snprintf(
+                        mensagem, sizeof(mensagem),
+                        "Energia enviada de %s para %s: 12%% enviados, 9%% recebidos.",
+                        regioes[melhorOrigem].nome,
+                        regioes[selecionada].nome
+                    );
+                    mensagemTempo = 4.0f;
+                } else {
+                    snprintf(
+                        mensagem, sizeof(mensagem),
+                        "Nao ha outra regiao com energia suficiente para transferir."
+                    );
+                    mensagemTempo = 3.0f;
+                }
+            }
+
+            // Espaco: reduz temporariamente o consumo da regiao selecionada.
+            if (IsKeyPressed(KEY_SPACE)) {
+                if (regioes[selecionada].economiaTempo <= 0.0f) {
+                    regioes[selecionada].economiaTempo = 8.0f;
+                    snprintf(
+                        mensagem, sizeof(mensagem),
+                        "Economia emergencial ativada em %s por 8 segundos!",
+                        regioes[selecionada].nome
+                    );
+                    mensagemTempo = 4.0f;
+                } else {
+                    snprintf(mensagem, sizeof(mensagem), "A economia emergencial ja esta ativa.");
+                    mensagemTempo = 3.0f;
+                }
+            }
+
+            // Avanco de noite.
+            if (tempoNoite >= DURACAO_NOITE) {
+                tempoNoite = 0.0f;
+                noite++;
+
+                if (noite > 5) {
+                    jogoEncerrado = true;
+                    vitoria = true;
+                    snprintf(mensagem, sizeof(mensagem),
+                             "Voce sobreviveu as cinco noites e manteve o Brasil aceso!");
+                } else {
+                    evento = SortearEvento();
+                    AplicarEvento(regioes, evento);
+
+                    snprintf(
+                        mensagem, sizeof(mensagem),
+                        "Noite %d: evento da noite - %s!",
+                        noite, NomeEvento(evento)
+                    );
+                    mensagemTempo = DURACAO_NOITE;
+                }
+            }
+
+            if (mensagemTempo > 0.0f) {
+                mensagemTempo -= dt;
+            }
+
+            // Atualiza baterias. Produção e consumo são taxas por segundo de jogo.
+            for (int i = 0; i < NUM_REGIOES; i++) {
+                Regiao *r = &regioes[i];
+
+                if (r->economiaTempo > 0.0f) {
+                    r->economiaTempo -= dt;
+                }
+
+                float consumoAtual = r->consumo;
+
+                if (r->economiaTempo > 0.0f) {
+                    consumoAtual *= 0.55f;
+                }
+
+                float variacao = (r->producao - consumoAtual) * dt * 2.2f;
+                r->bateria += variacao;
+
+                if (r->bateria > 100.0f) r->bateria = 100.0f;
+                if (r->bateria < 0.0f) r->bateria = 0.0f;
+
+                if (r->bateria < r->limiteBlackout) {
+                    jogoEncerrado = true;
+                    vitoria = false;
+
+                    snprintf(
+                        mensagem, sizeof(mensagem),
+                        "BLACKOUT! %s caiu abaixo do limite de %.0f%%.",
+                        r->nome, r->limiteBlackout
+                    );
+                    break;
+                }
+            }
         }
 
-        /* --- Desenho --- */
         BeginDrawing();
         ClearBackground((Color){10, 14, 30, 255});
 
-        // Título
-        DrawText("VOLTERRA", 30, 20, 40, (Color){255, 220, 80, 255});
-        DrawText("Controle a energia do Brasil", 30, 66, 18, LIGHTGRAY);
-
-        // Estrelas decorativas do fundo
-        for (int i = 0; i < 60; i++) {
+        // Fundo decorativo.
+        for (int i = 0; i < 55; i++) {
             int x = (i * 197) % LARGURA;
-            int y = (i * 91) % 560;
-            float brilho = 0.4f + 0.6f * fabsf(sinf(t + i));
+            int y = (i * 91) % 610;
+            float brilho = 0.25f + 0.5f * fabsf(sinf(tempo + i));
             DrawPixel(x, y, Fade(WHITE, brilho));
         }
 
-        // Regiões
+        DrawText("VOLTERRA", 28, 17, 38, (Color){255, 220, 80, 255});
+        DrawText("A crise das cinco noites", 30, 57, 18, LIGHTGRAY);
+
+        char textoNoite[80];
+        if (noite <= 5) {
+            snprintf(textoNoite, sizeof(textoNoite), "NOITE %d / 5", noite);
+        } else {
+            snprintf(textoNoite, sizeof(textoNoite), "FIM DA PARTIDA");
+        }
+
+        DrawText(textoNoite, 1010, 24, 24, YELLOW);
+
+        float restante = DURACAO_NOITE - tempoNoite;
+        if (restante < 0.0f) restante = 0.0f;
+
+        char textoTempo[80];
+        snprintf(textoTempo, sizeof(textoTempo), "Proxima noite: %.0f s", restante);
+        DrawText(textoTempo, 1010, 54, 17, LIGHTGRAY);
+
+        // Regiões do mapa.
         for (int i = 0; i < NUM_REGIOES; i++) {
             Regiao *r = &regioes[i];
-            Color c = r->cor;
-            if (i == hover) c = ColorBrightness(c, 0.2f);
-            // sombra
-            PreencherPoligono(r->pontos, r->numPontos, r->centro, Fade(BLACK, 0.35f));
-            PreencherPoligono(r->pontos, r->numPontos, r->centro, c);
-            ContornoPoligono(r->pontos, r->numPontos, i == selecionada ? 5 : 2,
-                             i == selecionada ? WHITE : (Color){20, 20, 30, 255});
+            Color cor = r->cor;
+            bool sobre = PontoNoPoligono(mouse, r->pontos, r->numPontos);
+
+            if (sobre) {
+                cor = ColorBrightness(cor, 0.15f);
+            }
+
+            PreencherPoligono(r->pontos, r->numPontos, Fade(BLACK, 0.35f));
+            PreencherPoligono(r->pontos, r->numPontos, cor);
+
+            DesenharContorno(
+                r->pontos,
+                r->numPontos,
+                i == selecionada ? 5.0f : 2.0f,
+                i == selecionada ? WHITE : (Color){20, 20, 30, 255}
+            );
+
+            DesenharIconeFonte(r->fonte, r->centro, tempo);
+
+            int larguraNome = MeasureText(r->nome, 17);
+            DrawText(
+                r->nome,
+                r->centro.x - larguraNome / 2,
+                r->centro.y + 33,
+                17,
+                WHITE
+            );
+
+            char bateriaTexto[24];
+            snprintf(bateriaTexto, sizeof(bateriaTexto), "%.0f%%", r->bateria);
+
+            DrawText(
+                bateriaTexto,
+                r->centro.x - 22,
+                r->centro.y + 54,
+                17,
+                CorBateria(r->bateria)
+            );
         }
 
-        // Ícones e nomes
+        // Painel inferior.
+        DrawRectangle(0, 625, LARGURA, 95, (Color){20, 26, 50, 255});
+        DrawLine(0, 625, LARGURA, 625, (Color){255, 220, 80, 255});
+
+        DrawText("ENERGIA DAS REGIOES", 28, 637, 17, YELLOW);
+
         for (int i = 0; i < NUM_REGIOES; i++) {
-            DesenharIcone(regioes[i].fonte, regioes[i].centro, t);
-            int w = MeasureText(regioes[i].nome, 18);
-            DrawText(regioes[i].nome, regioes[i].centro.x - w / 2,
-                     regioes[i].centro.y + 34, 18, WHITE);
+            int x = 28 + i * 245;
+            Regiao *r = &regioes[i];
+
+            DrawText(r->nome, x, 660, 15, WHITE);
+            DesenharBarraBateria(
+                x,
+                682,
+                190,
+                16,
+                r->bateria,
+                r->limiteBlackout
+            );
+
+            char limiteTexto[32];
+            snprintf(
+                limiteTexto,
+                sizeof(limiteTexto),
+                "limite %.0f%%",
+                r->limiteBlackout
+            );
+            DrawText(limiteTexto, x + 194, 681, 13, LIGHTGRAY);
         }
 
-        // Painel inferior (controles)
-        DrawRectangle(0, 630, LARGURA, 90, (Color){20, 26, 50, 255});
-        DrawLine(0, 630, LARGURA, 630, (Color){255, 220, 80, 255});
-        char info[128];
-        snprintf(info, sizeof(info), "Regiao: %s | Fonte: %s | Bateria: %.0f%%",
-                 regioes[selecionada].nome, regioes[selecionada].fonteNome,
-                 regioes[selecionada].bateria);
-        DrawText(info, 30, 645, 22, WHITE);
-        DrawText("Mouse: clique na regiao   |   WASD: trocar de regiao   |   ESC: sair",
-                 30, 685, 18, LIGHTGRAY);
+        // Instruções e evento atual.
+        DrawRectangle(20, 94, 265, 90, Fade((Color){15, 20, 38, 255}, 0.92f));
+        DrawRectangleLines(20, 94, 265, 90, (Color){100, 120, 160, 255});
+        DrawText("CONTROLES", 34, 105, 17, YELLOW);
+        DrawText("WASD / clique: selecionar", 34, 130, 15, WHITE);
+        DrawText("E: transferir energia", 34, 151, 15, WHITE);
+        DrawText("ESPACO: economizar energia", 34, 171, 15, WHITE);
 
-        DrawFPS(LARGURA - 90, 10);
+        DrawRectangle(965, 95, 285, 70, Fade((Color){15, 20, 38, 255}, 0.92f));
+        DrawRectangleLines(965, 95, 285, 70, (Color){100, 120, 160, 255});
+        DrawText("EVENTO", 980, 105, 16, YELLOW);
+        DrawText(NomeEvento(evento), 980, 130, 20, WHITE);
+
+        // Detalhes da região selecionada.
+        Regiao *r = &regioes[selecionada];
+        DrawRectangle(965, 180, 285, 105, Fade((Color){15, 20, 38, 255}, 0.92f));
+        DrawRectangleLines(965, 180, 285, 105, (Color){100, 120, 160, 255});
+
+        DrawText(r->nome, 980, 191, 21, WHITE);
+        DrawText(r->fonteNome, 980, 219, 16, LIGHTGRAY);
+
+        char limiteRegiao[80];
+        snprintf(
+            limiteRegiao,
+            sizeof(limiteRegiao),
+            "%s | blackout abaixo de %.0f%%",
+            r->cidadeGrande ? "Cidade grande" : "Cidade pequena",
+            r->limiteBlackout
+        );
+        DrawText(limiteRegiao, 980, 246, 14, YELLOW);
+
+        // Mensagens temporarias.
+        if (mensagemTempo > 0.0f || jogoEncerrado) {
+            int larguraMensagem = MeasureText(mensagem, 18);
+            DrawRectangle(
+                LARGURA / 2 - larguraMensagem / 2 - 18,
+                590,
+                larguraMensagem + 36,
+                28,
+                Fade((Color){8, 12, 24, 255}, 0.9f)
+            );
+            DrawText(
+                mensagem,
+                LARGURA / 2 - larguraMensagem / 2,
+                595,
+                18,
+                jogoEncerrado && !vitoria ? RED : WHITE
+            );
+        }
+
+        // Tela de fim de jogo.
+        if (jogoEncerrado) {
+            DrawRectangle(0, 0, LARGURA, ALTURA, Fade(BLACK, 0.72f));
+
+            const char *titulo = vitoria ? "BRASIL SALVO!" : "APAGAO NACIONAL";
+            Color corTitulo = vitoria ? (Color){100, 240, 150, 255} : RED;
+            int larguraTitulo = MeasureText(titulo, 48);
+
+            DrawText(
+                titulo,
+                LARGURA / 2 - larguraTitulo / 2,
+                260,
+                48,
+                corTitulo
+            );
+
+            const char *subtitulo = vitoria
+                ? "Voce sobreviveu as cinco noites."
+                : mensagem;
+
+            int larguraSubtitulo = MeasureText(subtitulo, 21);
+            DrawText(
+                subtitulo,
+                LARGURA / 2 - larguraSubtitulo / 2,
+                325,
+                21,
+                WHITE
+            );
+
+            DrawText(
+                "Feche a janela para sair.",
+                LARGURA / 2 - MeasureText("Feche a janela para sair.", 18) / 2,
+                370,
+                18,
+                LIGHTGRAY
+            );
+        }
+
+        DrawFPS(LARGURA - 75, ALTURA - 25);
         EndDrawing();
     }
 
