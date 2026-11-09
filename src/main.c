@@ -213,9 +213,33 @@ static void AplicarEvento(Regiao regioes[], TipoEvento e){
     }
 }
 
-// desenhar barra baretia (aqui):
-//
-//
+static void DesenharBarraBateria(float x, float y, float largura, float altura,
+                                 float bateria, float limite)
+{
+    DrawRectangle(x, y, largura, altura, (Color){25, 30, 45, 255});
+
+    float preenchimento = bateria / 100.0f;
+    if (preenchimento < 0.0f) preenchimento = 0.0f;
+    if (preenchimento > 1.0f) preenchimento = 1.0f;
+
+    DrawRectangle(
+        x + 2,
+        y + 2,
+        (largura - 4) * preenchimento,
+        altura - 4,
+        CorBateria(bateria)
+    );
+
+    float posicaoLimite = x + largura * (limite / 100.0f);
+    DrawLineEx(
+        (Vector2){posicaoLimite, y - 3},
+        (Vector2){posicaoLimite, y + altura + 3},
+        2,
+        WHITE
+    );
+
+    DrawRectangleLines(x, y, largura, altura, LIGHTGRAY);
+}
 
 /* ---------- Programa principal ---------- */
 
