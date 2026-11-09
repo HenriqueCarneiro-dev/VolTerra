@@ -3,8 +3,9 @@
 #include <stdio.h>
 
 #define LARGURA 1280
-#define ALTURA  720
+#define ALTURA 720
 #define NUM_REGIOES 5
+#define DURACAO_NOITE 20.0f
 
 typedef enum {
     NORTE = 0,
@@ -27,11 +28,27 @@ typedef struct {
     const char *fonteNome;
     TipoFonte fonte;
     Color cor;
-    Vector2 pontos[8];   // polígono da região (convexo, sentido horário)
+    
+    Vector2 pontos[8];      // polígono da região (convexo, sentido horário)
     int numPontos;
-    Vector2 centro;      // onde desenhar o ícone da fonte
-    float bateria;       // 0 a 100
+    Vector2 centro;         // onde desenhar o ícone da fonte
+
+    float bateria;          // 0 a 100
+    float producao;         
+    float consumo;          // 0 A 150
+    float limiteBlackout;  // % minima de bateria, abaixo disso a regiao sofre blackout
+    bool  cidadeGrande;     // if TRUE -> limite blackout (50%), else -> limite blackout (20%)
+    float economiaTempo;    // Seg para ativar a economia emergencial;
 } Regiao;
+
+//adicao dos eventos:
+typedef enum{
+    EVENTO_NORMAL,
+    EVENTO_CHUVA,
+    EVENTO_ENCHENTE,
+    EVENTO_VENTOS,
+    EVENTO_POLUICAO,
+} TipoEvento;
 
 /* ---------- Utilidades de geometria ---------- */
 
@@ -143,6 +160,62 @@ static void DesenharIcone(TipoFonte f, Vector2 c, float t)
         case FONTE_BIOMASSA: IconeBiomassa(c, t); break;
     }
 }
+
+/*============ FUNCOES AUXILIARES ============*/
+static const char *NomeEvento(TipoEvento e){
+    switch (e){
+        case EVENTO_CHUVA:    return "Chuvas fortes";
+        case EVENTO_ENCHENTE: return "Enchente";
+        case EVENTO_VENTOS:   return "Ventos fortes";
+        case EVENTO_POLUICAO: return "Poluicao";
+        default:              return "Tempo estavel";
+    }
+}   
+
+static Color CorBateria(float bateria){
+    if(bateria < 30.0f) return RED;
+    if(bateria < 55.0f) return ORANGE;    //mudanca de cor por regiao diante a bateria dele;;
+    return (Color){80, 220, 150, 255};
+}
+
+static TipoEvento SortearEvento(void){
+    return (TipoEvento)GetRandomValue(EVENTO_CHUVA, EVENTO_POLUICAO);
+}
+
+static void AplicarEvento(Regiao regioes[], TipoEvento e){
+    for(int i=0; i< NUM_REGIOES; i++){
+        regioes[i].producao = regioes[i].producao;
+        regioes[i].consumo = regioes[i].consumo;
+    }
+
+    switch (e){
+        case EVENTO_CHUVA:  // ajuda a hidreletrica
+            regioes[NORTE].producao   *= 1.25f;
+            regioes[SUL].producao     *= 1.20f;
+            regioes[SUDESTE].producao *= 1.15f;
+            break;
+        case EVENTO_ENCHENTE:   // prejuca a rede
+                      regioes[NORTE].producao    *= 0.65f;
+            regioes[NORDESTE].producao *= 0.80f;
+            break;
+        case EVENTO_VENTOS:     // ajuda a eolica
+            regioes[NORDESTE].producao *= 1.35f;
+            regioes[SUL].producao      *= 1.15f;
+            break;
+        case EVENTO_POLUICAO:   // prejudica a solar e aumenta a demanda
+            regioes[CENTRO_OESTE].producao *= 0.70f;
+            regioes[SUDESTE].consumo       *= 1.35f;
+            regioes[NORDESTE].consumo      *= 1.15f;
+            break;
+        default:
+            break;  
+
+    }
+}
+
+// desenhar barra baretia (aqui):
+//
+//
 
 /* ---------- Programa principal ---------- */
 
