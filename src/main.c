@@ -15,6 +15,7 @@
 #define TAM_RANKING 5
 #define FATOR_SIMULACAO 3.5f
 #define FATOR_ECONOMIA 0.55f
+
 typedef enum {
     NORTE = 0,
     NORDESTE,
@@ -134,27 +135,34 @@ static void DrawTextCentro(const char *texto, int cx, int y, int tamanho, Color 
 static bool PontoNoPoligono(Vector2 p, Vector2 *v, int n)
 {
     bool dentro = false;
+
     for (int i = 0, j = n - 1; i < n; j = i++) {
-        if (((v[i].y > p.y) != (v[j].y > p.y)) &&
-            (p.x < (v[j].x - v[i].x) * (p.y - v[i].y) / (v[j].y - v[i].y) + v[i].x))
-            dentro = !dentro;
+        bool cruza = ((v[i].y > p.y) != (v[j].y >p.y))
+        if (cruza) {
+            float x = (v[j].x - v[i].x) * (p.y - v[i.y]) / (v[j].y - v[i].y) + v[i].x;
+            if (p.x <x) dentro = !dentro;
+        }
     }
     return dentro;
 }
 
-// Preenche polígono qualquer usando triângulos a partir do centro (leque)
+// Desenha cada triangulo nos dois sentidos: a raylib descarta o sentido errado.
 static void PreencherPoligono(Vector2 *v, int n, Vector2 centro, Color cor)
 {
+    Vector2 c = {0.0f, 0.0f};
+
     for (int i = 0; i < n; i++) {
-        Vector2 a = v[i];
-        Vector2 b = v[(i + 1) % n];
-        // garante sentido anti-horário exigido pelo raylib
-        Vector2 ab = { b.x - a.x, b.y - a.y };
-        Vector2 ac = { centro.x - a.x, centro.y - a.y };
-        float cruz = ab.x * ac.y - ab.y * ac.x;
-        if (cruz > 0) DrawTriangle(centro, b, a, cor);
-        else          DrawTriangle(centro, a, b, cor);
+        c.x += p[i].x;
+        c.y += p[i].y;
     }
+
+    for (int i = 0; i <n; i++) {
+        Vector2 a = {p[i].x + dx, p[i].y + dy};
+        Vector2 b = {p[(i + 1) % n].x + dx, p[(i + 1) % n].y + dy};
+        DrawTriangle(c, a, b, cor);
+        DrawTriangle(c, b, a, cor);
+    }
+    
 }
 
 static void DesenharContorno(const Vector2 *p, int n, float espessura, Color cor)
@@ -165,77 +173,120 @@ static void DesenharContorno(const Vector2 *p, int n, float espessura, Color cor
 
 /* ---------- Ícones das fontes de energia (desenhados em 2D) ---------- */
 
-static void IconeHidro(Vector2 c, float t)
+static void DesenharIconeFonte(TipoFonte fonte, Vector2 c, float tempo)
 {
-    // barragem + gotas de água
-    DrawRectangle(c.x - 22, c.y - 14, 44, 28, (Color){70, 70, 80, 255});
-    DrawRectangle(c.x - 22, c.y - 14, 44, 6, (Color){110, 110, 120, 255});
-    for (int i = 0; i < 3; i++) {
-        float off = fmodf(t * 30 + i * 8, 24);
-        DrawRectangle(c.x - 12 + i * 12, c.y - 8 + off * 0.8f, 4, 6, (Color){80, 170, 255, 255});
+    switch (fonte) {
+        case FONTE_HIDRO:
+            DrawRectangle(c.x - 18, c.y - 10, 36, 22, (Color){65, 75, 95, 255});
+            DrawRectangle(c.x - 23, c.y + 12, 46, 5, (Color){50, 140, 240, 255});
+            for (int i = 0; i < 3; i++) {
+                float d = fmodf(tempo * 24.0f + i * 9.0f, 18.0f);
+                DrawCircle(c.x - 10 + i * 10, c.y - 4 + d, 2.5f, SKYBLUE);
+            }
+            break;
+
+        case FONTE_EOLICA: {
+            float angulo = tempo * 120.0f;
+            DrawLineEx((Vector2){c.x, c.y - 5}, (Vector2){c.x, c.y + 23}, 4, RAYWHITE);
+            for (int i = 0; i < 3; i++) {
+                float a = (angulo + i * 120.0f) * DEG2RAD;
+                Vector2 ponta = {c.x + cosf(a) * 23.0f, c.y - 5 + sinf(a) * 23.0f};
+                DrawLineEx((Vector2){c.x, c.y - 5}, ponta, 4, RAYWHITE);
+            }
+            DrawCircle(c.x, c.y - 5, 5, YELLOW);
+            break;
+        }
+
+        case FONTE_SOLAR:
+            DrawCircle(c.x + 15, c.y - 14, 8, YELLOW);
+            DrawRectangle(c.x - 24, c.y - 2, 38, 23, (Color){20, 55, 125, 255});
+            DrawLine(c.x - 24, c.y + 9, c.x + 14, c.y + 9, SKYBLUE);
+            DrawLine(c.x - 5, c.y - 2, c.x - 5, c.y + 21, SKYBLUE);
+            DrawLine(c.x + 7, c.y - 2, c.x + 7, c.y + 21, SKYBLUE);
+            break;
+
+        case FONTE_NUCLEAR:
+            DrawTriangle((Vector2){c.x - 19, c.y + 19}, (Vector2){c.x + 19, c.y + 19},
+                         (Vector2){c.x - 10, c.y - 13}, LIGHTGRAY);
+            DrawTriangle((Vector2){c.x + 10, c.y - 13}, (Vector2){c.x - 10, c.y - 13},
+                         (Vector2){c.x + 19, c.y + 19}, LIGHTGRAY);
+            DrawCircle(c.x + 21, c.y - 17, 6, Fade(WHITE, 0.75f));
+            DrawCircle(c.x + 29, c.y - 22, 5, Fade(WHITE, 0.5f));
+            break;
+
+        case FONTE_BIOMASSA:
+            DrawEllipse(c.x, c.y, 12, 19, GREEN);
+            DrawLineEx((Vector2){c.x, c.y + 19}, (Vector2){c.x, c.y - 16}, 2, DARKGREEN);
+            DrawTriangle((Vector2){c.x - 6, c.y + 25}, (Vector2){c.x + 6, c.y + 25},
+                         (Vector2){c.x, c.y + 12 + sinf(tempo * 5.0f) * 2.0f}, ORANGE);
+            break;
     }
-    DrawRectangle(c.x - 26, c.y + 14, 52, 5, (Color){50, 120, 220, 255});
 }
 
-static void IconeEolica(Vector2 c, float t)
+static Color CorBateria(float bateria)
 {
-    // torre + pás giratórias
-    DrawTriangle((Vector2){c.x - 4, c.y + 24}, (Vector2){c.x + 4, c.y + 24},
-                 (Vector2){c.x, c.y - 4}, RAYWHITE);
-    float ang = t * 120.0f;
-    for (int i = 0; i < 3; i++) {
-        float a = (ang + i * 120.0f) * DEG2RAD;
-        Vector2 ponta = { c.x + cosf(a) * 24, c.y - 4 + sinf(a) * 24 };
-        DrawLineEx((Vector2){c.x, c.y - 4}, ponta, 3, RAYWHITE);
+    if (bateria < 30.0f) return RED;
+    if (bateria < 55.0f) return ORANGE;
+    return (Color){80, 220, 150, 255};
+}
+
+static void DesenharBarraBateria(float x, float y, float largura, float altura,
+                                 float bateria, float limite, bool ativa)
+{
+    DrawRectangle(x, y, largura, altura, (Color){25, 30, 45, 255});
+
+    if (ativa) {
+        float p = bateria / 100.0f;
+        if (p < 0.0f) p = 0.0f;
+        if (p > 1.0f) p = 1.0f;
+        DrawRectangle(x + 2, y + 2, (largura - 4) * p, altura - 4, CorBateria(bateria));
+
+        float lx = x + largura * (limite / 100.0f);
+        DrawLineEx((Vector2){lx, y - 3}, (Vector2){lx, y + altura + 3}, 2, WHITE);
     }
-    DrawCircle(c.x, c.y - 4, 4, LIGHTGRAY);
+
+    DrawRectangleLines(x, y, largura, altura, ativa ? LIGHTGRAY : DARKGRAY);
 }
 
-static void IconeSolar(Vector2 c, float t)
-{
-    // painel inclinado + sol com raios
-    Vector2 sol = { c.x + 16, c.y - 16 };
-    DrawCircleV(sol, 7, YELLOW);
-    for (int i = 0; i < 8; i++) {
-        float a = (t * 40 + i * 45) * DEG2RAD;
-        DrawLineEx((Vector2){sol.x + cosf(a) * 10, sol.y + sinf(a) * 10},
-                   (Vector2){sol.x + cosf(a) * 15, sol.y + sinf(a) * 15}, 2, YELLOW);
-    }
-    DrawRectangle(c.x - 22, c.y - 4, 34, 20, (Color){20, 50, 120, 255});
-    for (int i = 1; i < 3; i++)
-        DrawLine(c.x - 22 + i * 11, c.y - 4, c.x - 22 + i * 11, c.y + 16, SKYBLUE);
-    DrawLine(c.x - 22, c.y + 6, c.x + 12, c.y + 6, SKYBLUE);
-}
+/* ---------------- Regioes e eventos ---------------- */
 
-static void IconeNuclear(Vector2 c, float t)
+static void CriarRegioes(Regiao *saida)
 {
-    // torre de resfriamento + fumaça
-    DrawTriangle((Vector2){c.x - 16, c.y + 20}, (Vector2){c.x + 16, c.y + 20},
-                 (Vector2){c.x - 9, c.y - 12}, LIGHTGRAY);
-    DrawTriangle((Vector2){c.x + 9, c.y - 12}, (Vector2){c.x - 9, c.y - 12},
-                 (Vector2){c.x + 16, c.y + 20}, LIGHTGRAY);
-    float f = fmodf(t * 15, 20);
-    DrawCircle(c.x, c.y - 16 - f, 6 + f * 0.2f, Fade(WHITE, 1.0f - f / 20.0f));
-}
+    Regiao modelo[NUM_REGIOES] = {
+        {   // NORTE
+            "Norte", "Hidreletrica", FONTE_HIDRO, {46, 139, 87, 255},
+            { {290,250}, {310,170}, {440,110}, {560,115}, {650,95}, {720,130},
+              {755,145}, {745,230}, {720,300}, {580,320}, {440,310}, {310,295} },
+            12, {520, 205}, 100.0f, 0.90f, 0.95f, 20.0f, false
+        },
+        {   // NORDESTE
+            "Nordeste", "Eolica", FONTE_EOLICA, {218, 165, 32, 255},
+            { {755,145}, {790,160}, {860,165}, {910,200}, {905,250}, {880,300},
+              {860,350}, {840,400}, {780,385}, {735,340}, {720,300}, {745,230} },
+            12, {830, 260}, 100.0f, 0.95f, 1.00f, 50.0f, true
+        },
+        {   // CENTRO-OESTE
+            "Centro-Oeste", "Solar", FONTE_SOLAR, {210, 105, 30, 255},
+            { {310,295}, {440,310}, {580,320}, {720,300}, {735,340}, {780,385},
+              {710,415}, {655,450}, {650,505}, {610,540}, {590,490}, {540,450},
+              {470,420}, {400,380}, {330,340} },
+            15, {540, 385}, 100.0f, 0.88f, 0.93f, 20.0f, false
+        },
+        {   // SUDESTE
+            "Sudeste", "Nuclear", FONTE_NUCLEAR, {160, 82, 160, 255},
+            { {840,400}, {810,450}, {770,490}, {730,530}, {700,500}, {650,505},
+              {655,450}, {710,415}, {780,385} },
+            9, {745, 450}, 100.0f, 0.92f, 1.05f, 50.0f, true
+        },
+        {   // SUL
+            "Sul", "Hidreletrica", FONTE_HIDRO, {65, 105, 225, 255},
+            { {730,530}, {690,575}, {640,590}, {610,540}, {650,505}, {700,500} },
+            6, {668, 538}, 100.0f, 0.88f, 0.93f, 20.0f, false
+        }
+    };
 
-static void IconeBiomassa(Vector2 c, float t)
-{
-    // folha + chama
-    DrawEllipse(c.x, c.y, 14, 22, (Color){40, 160, 70, 255});
-    DrawLineEx((Vector2){c.x, c.y + 22}, (Vector2){c.x, c.y - 18}, 2, (Color){20, 100, 40, 255});
-    float osc = sinf(t * 6) * 2;
-    DrawTriangle((Vector2){c.x - 6, c.y + 26}, (Vector2){c.x + 6, c.y + 26},
-                 (Vector2){c.x + osc, c.y + 14}, ORANGE);
-}
-
-static void DesenharIcone(TipoFonte f, Vector2 c, float t)
-{
-    switch (f) {
-        case FONTE_HIDRO:    IconeHidro(c, t); break;
-        case FONTE_EOLICA:   IconeEolica(c, t); break;
-        case FONTE_SOLAR:    IconeSolar(c, t); break;
-        case FONTE_NUCLEAR:  IconeNuclear(c, t); break;
-        case FONTE_BIOMASSA: IconeBiomassa(c, t); break;
+    for (int i = 0; i < NUM_REGIOES; i++) {
+        saida[i] = modelo[i];
     }
 }
 
@@ -249,12 +300,6 @@ static const char *NomeEvento(TipoEvento e){
         default:              return "Tempo estavel";
     }
 }   
-
-static Color CorBateria(float bateria){
-    if(bateria < 30.0f) return RED;
-    if(bateria < 55.0f) return ORANGE;    //mudanca de cor por regiao diante a bateria dele;;
-    return (Color){80, 220, 150, 255};
-}
 
 static TipoEvento SortearEvento(void){
     return (TipoEvento)GetRandomValue(EVENTO_CHUVA, EVENTO_POLUICAO);
