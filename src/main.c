@@ -167,6 +167,13 @@ static void PreencherPoligono(Vector2 *v, int n, Vector2 centro, Color cor)
 
 static void DesenharContorno(const Vector2 *p, int n, float espessura, Color cor)
 {
+    for (int i = 0; i < n; i++) {
+        DrawLineEx(p[i], p[(i + 1) % n], espessura, cor);
+    }
+}
+
+static void DesenharContorno(const Vector2 *p, int n, float espessura, Color cor)
+{
     for (int i = 0; i < n; i++)
         DrawLineEx(p[i], p[(i + 1) % n], espessura, cor);
 }
@@ -290,16 +297,211 @@ static void CriarRegioes(Regiao *saida)
     }
 }
 
-/*============ FUNCOES AUXILIARES ============*/
-static const char *NomeEvento(TipoEvento e){
-    switch (e){
-        case EVENTO_CHUVA:    return "Chuvas fortes";
-        case EVENTO_ENCHENTE: return "Enchente";
-        case EVENTO_VENTOS:   return "Ventos fortes";
-        case EVENTO_POLUICAO: return "Poluicao";
-        default:              return "Tempo estavel";
+static int RegioesDaFase(int fase)
+{
+    if (fase <= 1) return 3;
+    if (fase == 2) return 4;
+    return 5;
+}
+
+static int FaseLiberacao(int id)
+{
+    for (int k = 0; k < NUM_REGIOES; k++) {
+        if (ordemAtivacao[k] == id) return (k < 3) ? 1 : k - 1;
     }
-}   
+    return 1;
+}
+
+static float IntensidadeFase(int fase)
+{
+    return 1.0f + 0.2f * (fase - 1);
+}
+
+// Efeitos negativos de producao crescem com a intensidade.
+static float ProdEv(float f, float k)
+{
+    if (f >= 1.0f) return f;
+    float r = 1.0f - (1.0f - f) * k;
+    return (r < 0.30f) ? 0.30f : r;
+}
+
+// Efeitos negativos de consumo crescem com a intensidade.
+static float ConsEv(float f, float k)
+{
+    if (f <= 1.0f) return f;
+    return 1.0f + (f - 1.0f) * k;
+}
+
+static void AplicarEvento(Regiao *r, TipoEvento evento, float k)
+{
+    static const float prodBase[NUM_REGIOES] = {0.90f, 0.95f, 0.88f, 0.92f, 0.88f};
+    static const float consBase[NUM_REGIOES] = {0.95f, 1.00f, 0.93f, 1.05f, 0.93f};
+
+    for (int i = 0; i < NUM_REGIOES; i++) {
+        r[i].producao = prodBase[i];
+        r[i].consumo = consBase[i];
+    }
+
+    switch (evento) {
+        case EVENTO_CHUVA:
+            r[NORTE].producao    *= ProdEv(1.25f, k);
+            r[SUL].producao      *= ProdEv(1.20f, k);
+            r[SUDESTE].producao  *= ProdEv(1.15f, k);
+            r[CENTRO_OESTE].producao *= ProdEv(0.90f, k);
+            break;
+
+        case EVENTO_ENCHENTE:
+            r[NORTE].producao    *= ProdEv(0.65f, k);
+            r[NORDESTE].producao *= ProdEv(0.80f, k);
+            r[SUL].producao      *= ProdEv(0.85f, k);
+            r[SUDESTE].producao  *= ProdEv(0.90f, k);
+            break;
+
+        case EVENTO_VENTOS:
+            r[NORDESTE].producao *= ProdEv(1.35f, k);
+            r[CENTRO_OESTE].consumo *= ConsEv(1.15f, k);
+            r[SUL].consumo       *= ConsEv(1.10f, k);
+            break;
+
+        case EVENTO_POLUICAO:
+            r[CENTRO_OESTE].producao *= ProdEv(0.70f, k);
+            r[SUDESTE].consumo   *= ConsEv(1.35f, k);
+            r[NORDESTE].consumo  *= ConsEv(1.15f, k);
+            break;
+
+        default:
+            break;
+    }
+}
+
+/* ---------------- Ranking ---------------- */
+
+static void CarregarRanking(int ranking[])
+{
+    for (int i = 0; i < TAM_RANKING; i++) ranking[i] = 0;
+
+    FILE *f = fopen("ranking.txt", "r");
+    if (!f) return;
+
+    for (int i = 0; i < TAM_RANKING; i++) {
+        if (fscanf(f, "%d", &ranking[i]) != 1) break;
+    }
+
+    fclose(f);
+}
+
+static int InserirRanking(int ranking[], int pontos)
+{
+    int pos = -1;
+
+    if (pontos <= 0) return 0;
+
+    for (int i = 0; i < TAM_RANKING; i++) {
+        if (pontos > ranking[i]) {
+            pos = i;
+            break;
+        }
+    }
+
+    if (pos < 0) return 0;
+
+    for (int i = TAM_RANKING - 1; i > pos; i--) {
+        ranking[i] = ranking[i - 1];
+    }
+    ranking[pos] = pontos;
+
+    FILE *f = fopen("ranking.txt", "w");
+    if (f) {
+        for (int i = 0; i < TAM_RANKING; i++) fprintf(f, "%d\n", ranking[i]);
+        fclose(f);
+    }
+
+    return pos + 1;
+}
+
+static void DesenharRanking(const int ranking[], int cx, int y, int destaque)
+{
+    DrawTextCentro("RANKING", cx, y, 22, YELLOW);
+
+    for (int i = 0; i < TAM_RANKING; i++) {
+        char linha[64];
+
+        if (ranking[i] > 0) snprintf(linha, sizeof(linha), "%d.  %d pts", i + 1, ranking[i]);
+        else                snprintf(linha, sizeof(linha), "%d.  ---", i + 1);
+
+        DrawTextCentro(linha, cx, y + 30 + i * 24, 20,
+                       (destaque == i + 1) ? (Color){100, 240, 150, 255} : WHITE);
+    }
+} 
+
+/* ---------------- Logica da partida ---------------- */
+
+static void SortearDia(Jogo *j)
+{
+    j->evento = (TipoEvento)GetRandomValue(EVENTO_CHUVA, EVENTO_POLUICAO);
+    AplicarEvento(j->regioes, j->evento, IntensidadeFase(j->fase));
+
+    if (j->ganhoDia > 0) {
+        snprintf(j->mensagem, sizeof(j->mensagem),
+                 "Fase %d, dia %d: %s! (dia anterior: +%d pts)",
+                 j->fase, j->dia, NomeEvento(j->evento), j->ganhoDia);
+    } else {
+        snprintf(j->mensagem, sizeof(j->mensagem),
+                 "Fase %d, dia %d: %s!", j->fase, j->dia, NomeEvento(j->evento));
+    }
+    j->mensagemTempo = 5.0f;
+}
+
+static void ConfigurarFase(Jogo *j)
+{
+    int qtd = RegioesDaFase(j->fase);
+
+    for (int i = 0; i < NUM_REGIOES; i++) j->regioes[i].ativa = false;
+    for (int k = 0; k < qtd; k++) j->regioes[ordemAtivacao[k]].ativa = true;
+
+    for (int i = 0; i < NUM_REGIOES; i++) {
+        Regiao *r = &j->regioes[i];
+        r->economiaTempo = 0.0f;
+        r->recarga = 0.0f;
+        r->emBlackout = false;
+        r->blackoutTempo = 0.0f;
+
+        if (r->ativa) {
+            r->bateria += 35.0f;
+            if (r->bateria > 100.0f) r->bateria = 100.0f;
+        }
+    }
+
+    if (!j->regioes[j->selecionada].ativa) j->selecionada = ordemAtivacao[0];
+
+    j->dia = 1;
+    j->tempoDia = 0.0f;
+    j->tempoFase = 0.0f;
+    j->ganhoDia = 0;
+    j->linhaTempo = 0.0f;
+
+    SortearDia(j);
+}
+
+static void IniciarPartida(Jogo *j)
+{
+    CriarRegioes(j->regioes);
+
+    j->fase = 1;
+    j->selecionada = SUDESTE;
+    j->pontos = 0;
+    j->pontosExibidos = 0.0f;
+    j->sequencia = 0;
+    j->ganhoDia = 0;
+    j->origem = -1;
+    j->destino = -1;
+    j->vitoria = false;
+    j->posicaoRanking = 0;
+
+    ConfigurarFase(j);
+}
+
+static void EncerrarDia(Jogo *j)
 
 static TipoEvento SortearEvento(void){
     return (TipoEvento)GetRandomValue(EVENTO_CHUVA, EVENTO_POLUICAO);
@@ -335,10 +537,6 @@ static void AplicarEvento(Regiao regioes[], TipoEvento e){
 
     }
 }
-
-// desenhar barra baretia (aqui):
-//
-//
 
 /* ---------- Programa principal ---------- */
 
