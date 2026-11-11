@@ -113,9 +113,8 @@ static const Color coresFio[4] = {
     {70, 210, 100, 255}
 };
 
-/* ---------- Utilidades de geometria ---------- */
+/* ---------------- Utilidades ---------------- */
 
-// Ponto dentro de polígono (ray casting) - funciona para qualquer polígono
 static const char *NomeEvento(TipoEvento evento)
 {
     switch (evento) {
@@ -132,22 +131,24 @@ static void DrawTextCentro(const char *texto, int cx, int y, int tamanho, Color 
     DrawText(texto, cx - MeasureText(texto, tamanho) / 2, y, tamanho, cor);
 }
 
-static bool PontoNoPoligono(Vector2 p, Vector2 *v, int n)
+static bool PontoNoPoligono(Vector2 p, const Vector2 *v, int n)
 {
     bool dentro = false;
 
     for (int i = 0, j = n - 1; i < n; j = i++) {
-        bool cruza = ((v[i].y > p.y) != (v[j].y >p.y))
+        bool cruza = ((v[i].y > p.y) != (v[j].y > p.y));
+
         if (cruza) {
-            float x = (v[j].x - v[i].x) * (p.y - v[i.y]) / (v[j].y - v[i].y) + v[i].x;
-            if (p.x <x) dentro = !dentro;
+            float x = (v[j].x - v[i].x) * (p.y - v[i].y) / (v[j].y - v[i].y) + v[i].x;
+            if (p.x < x) dentro = !dentro;
         }
     }
+
     return dentro;
 }
 
 // Desenha cada triangulo nos dois sentidos: a raylib descarta o sentido errado.
-static void PreencherPoligono(Vector2 *v, int n, Vector2 centro, Color cor)
+static void PreencherPoligono(const Vector2 *p, int n, Color cor, float dx, float dy)
 {
     Vector2 c = {0.0f, 0.0f};
 
@@ -156,13 +157,15 @@ static void PreencherPoligono(Vector2 *v, int n, Vector2 centro, Color cor)
         c.y += p[i].y;
     }
 
-    for (int i = 0; i <n; i++) {
+    c.x = c.x / n + dx;
+    c.y = c.y / n + dy;
+
+    for (int i = 0; i < n; i++) {
         Vector2 a = {p[i].x + dx, p[i].y + dy};
         Vector2 b = {p[(i + 1) % n].x + dx, p[(i + 1) % n].y + dy};
         DrawTriangle(c, a, b, cor);
         DrawTriangle(c, b, a, cor);
     }
-    
 }
 
 static void DesenharContorno(const Vector2 *p, int n, float espessura, Color cor)
@@ -171,14 +174,6 @@ static void DesenharContorno(const Vector2 *p, int n, float espessura, Color cor
         DrawLineEx(p[i], p[(i + 1) % n], espessura, cor);
     }
 }
-
-static void DesenharContorno(const Vector2 *p, int n, float espessura, Color cor)
-{
-    for (int i = 0; i < n; i++)
-        DrawLineEx(p[i], p[(i + 1) % n], espessura, cor);
-}
-
-/* ---------- Ícones das fontes de energia (desenhados em 2D) ---------- */
 
 static void DesenharIconeFonte(TipoFonte fonte, Vector2 c, float tempo)
 {
@@ -432,7 +427,7 @@ static void DesenharRanking(const int ranking[], int cx, int y, int destaque)
         DrawTextCentro(linha, cx, y + 30 + i * 24, 20,
                        (destaque == i + 1) ? (Color){100, 240, 150, 255} : WHITE);
     }
-} 
+}
 
 /* ---------------- Logica da partida ---------------- */
 
@@ -507,15 +502,15 @@ static void EncerrarDia(Jogo *j)
     int n = 0;
     bool alerta = false;
 
-    for(int i=0; i<NUM_REGIOES; i++){
-        const Regiao *r = &j -> regioes[i];
-        if(!r->ativa) continue;
+    for (int i = 0; i < NUM_REGIOES; i++) {
+        const Regiao *r = &j->regioes[i];
+        if (!r->ativa) continue;
         soma += r->bateria;
         n++;
-        if(r->emBlackout) alerta = true;
+        if (r->emBlackout) alerta = true;
     }
 
-    float media = (n>0) ? soma / n : 0.0f;
+    float media = (n > 0) ? soma / n : 0.0f;
 
     if (alerta) {
         j->sequencia = 0;
@@ -801,11 +796,11 @@ static void DesenharMundo(const Jogo *j, EstadoJogo estado, float tempo, Vector2
     }
 }
 
-/* ---------- Programa principal ---------- */
+/* ---------------- Programa principal ---------------- */
 
 int main(void)
 {
-    InitWindow(LARGURA, ALTURA, "VolTerra - Parte 1");
+    InitWindow(LARGURA, ALTURA, "VolTerra - A crise das cinco noites");
     SetTargetFPS(60);
     SetRandomSeed((unsigned int)time(NULL));
 
@@ -823,6 +818,8 @@ int main(void)
         if (dt > 0.05f) dt = 0.05f;
         float tempo = (float)GetTime();
         Vector2 mouse = GetMousePosition();
+
+        /* ---------- Atualizacao ---------- */
 
         if (estado == ESTADO_MENU) {
             if (IsKeyPressed(KEY_ENTER)) {
@@ -844,7 +841,7 @@ int main(void)
         }
         else if (estado == ESTADO_MINIGAME) {
             int res = MinigameAtualizar(&mini, dt);
-            
+
             if (res == 1) {
                 Regiao *r = &j->regioes[mini.regiao];
                 r->bateria = r->limiteBlackout + 25.0f;
@@ -906,14 +903,149 @@ int main(void)
                 if (melhor >= 0) j->selecionada = melhor;
             }
 
-        /* ------------ Desenho ------------ */
+            // Selecao por mouse
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+                for (int i = 0; i < NUM_REGIOES; i++) {
+                    if (j->regioes[i].ativa &&
+                        PontoNoPoligono(mouse, j->regioes[i].pontos, j->regioes[i].numPontos)) {
+                        j->selecionada = i;
+                    }
+                }
+            }
+
+            // E: transferencia (12% saem, 9% chegam)
+            if (IsKeyPressed(KEY_E)) {
+                int origem = -1;
+                float maior = -1.0f;
+
+                for (int i = 0; i < NUM_REGIOES; i++) {
+                    const Regiao *o = &j->regioes[i];
+                    if (i == j->selecionada || !o->ativa) continue;
+
+                    if (o->bateria - 12.0f >= o->limiteBlackout + 5.0f && o->bateria > maior) {
+                        maior = o->bateria;
+                        origem = i;
+                    }
+                }
+
+                if (origem >= 0) {
+                    Regiao *dest = &j->regioes[j->selecionada];
+
+                    j->regioes[origem].bateria -= 12.0f;
+                    dest->bateria += 9.0f;
+                    if (dest->bateria > 100.0f) dest->bateria = 100.0f;
+
+                    j->origem = origem;
+                    j->destino = j->selecionada;
+                    j->linhaTempo = 1.0f;
+
+                    snprintf(j->mensagem, sizeof(j->mensagem),
+                             "%s enviou 12%% para %s (9%% chegaram).",
+                             j->regioes[origem].nome, dest->nome);
+                } else {
+                    snprintf(j->mensagem, sizeof(j->mensagem),
+                             "Nenhuma regiao pode doar sem arriscar o proprio blackout.");
+                }
+                j->mensagemTempo = 3.0f;
+            }
+
+            // Espaco: economia emergencial
+            if (IsKeyPressed(KEY_SPACE)) {
+                Regiao *s2 = &j->regioes[j->selecionada];
+
+                if (s2->economiaTempo > 0.0f) {
+                    snprintf(j->mensagem, sizeof(j->mensagem), "A economia ja esta ativa.");
+                } else if (s2->recarga > 0.0f) {
+                    snprintf(j->mensagem, sizeof(j->mensagem),
+                             "Economia em recarga: %.0f s.", s2->recarga);
+                } else {
+                    s2->economiaTempo = 8.0f;
+                    s2->recarga = 20.0f;
+                    snprintf(j->mensagem, sizeof(j->mensagem),
+                             "Economia ativada em %s por 8 segundos!", s2->nome);
+                }
+                j->mensagemTempo = 3.0f;
+            }
+
+            // Baterias e contagem de blackout
+            int regiaoCaiu = -1;
+
+            for (int i = 0; i < NUM_REGIOES; i++) {
+                Regiao *r = &j->regioes[i];
+                if (!r->ativa) continue;
+
+                if (r->economiaTempo > 0.0f) r->economiaTempo -= dt;
+                if (r->recarga > 0.0f) r->recarga -= dt;
+
+                float consumoAtual = r->consumo;
+                if (r->economiaTempo > 0.0f) consumoAtual *= FATOR_ECONOMIA;
+
+                r->bateria += (r->producao - consumoAtual) * dt * FATOR_SIMULACAO;
+                if (r->bateria > 100.0f) r->bateria = 100.0f;
+                if (r->bateria < 0.0f) r->bateria = 0.0f;
+
+                if (r->bateria < r->limiteBlackout) {
+                    if (!r->emBlackout) {
+                        r->emBlackout = true;
+                        r->blackoutTempo = TEMPO_BLACKOUT;
+                        snprintf(j->mensagem, sizeof(j->mensagem),
+                                 "ALERTA: %s em blackout! Voce tem 10 segundos.", r->nome);
+                        j->mensagemTempo = 4.0f;
+                    } else {
+                        r->blackoutTempo -= dt;
+                        if (r->blackoutTempo <= 0.0f && regiaoCaiu < 0) regiaoCaiu = i;
+                    }
+                } else {
+                    r->emBlackout = false;
+                }
+            }
+
+            if (regiaoCaiu >= 0) {
+                MinigameIniciar(&mini, regiaoCaiu);
+                estado = ESTADO_MINIGAME;
+            }
+            else if (j->tempoDia >= DURACAO_DIA) {
+                EncerrarDia(j);
+                j->tempoDia = 0.0f;
+                j->dia++;
+
+                if (j->dia > DIAS_POR_FASE) {
+                    if (j->fase >= TOTAL_FASES) {
+                        j->pontos += 1000;
+                        j->vitoria = true;
+                        snprintf(j->mensagem, sizeof(j->mensagem),
+                                 "Voce manteve o Brasil aceso por 10 minutos!");
+                        j->posicaoRanking = InserirRanking(ranking, j->pontos);
+                        estado = ESTADO_FIM;
+                    } else {
+                        j->pontos += 300 * j->fase;
+                        j->fase++;
+                        estado = ESTADO_FASE;
+                    }
+                } else {
+                    SortearDia(j);
+                }
+            }
+        }
+
+        // Contador de pontos subindo
+        if (j->pontosExibidos < (float)j->pontos) {
+            float diff = (float)j->pontos - j->pontosExibidos;
+            float passo = diff * dt * 4.0f;
+            if (passo < 1.0f) passo = 1.0f;
+            if (passo > diff) passo = diff;
+            j->pontosExibidos += passo;
+        }
+
+        /* ---------- Desenho ---------- */
+
         BeginDrawing();
         ClearBackground(BLACK);
 
         DesenharMundo(j, estado, tempo, mouse);
 
         char buf[160];
-        
+
         if (estado == ESTADO_MINIGAME) {
             MinigameDesenhar(&mini, j->regioes[mini.regiao].nome);
         }
