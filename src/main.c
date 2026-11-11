@@ -502,9 +502,31 @@ static void IniciarPartida(Jogo *j)
 }
 
 static void EncerrarDia(Jogo *j)
+{
+    float soma = 0.0f;
+    int n = 0;
+    bool alerta = false;
 
-static TipoEvento SortearEvento(void){
-    return (TipoEvento)GetRandomValue(EVENTO_CHUVA, EVENTO_POLUICAO);
+    for(int i=0; i<NUM_REGIOES; i++){
+        const Regiao *r = &j -> regioes[i];
+        if(!r->ativa) continue;
+        soma += r->bateria;
+        n++;
+        if(r->emBlackout) alerta = true;
+    }
+
+    float media = (n>0) ? soma / n : 0.0f;
+
+    if (alerta) {
+        j->sequencia = 0;
+        j->ganhoDia = 0;
+    } else {
+        j->sequencia++;
+        int s = (j->sequencia > 6) ? 6 : j->sequencia;
+        int base = 100 * j->fase + (int)(media * 2.0f);
+        j->ganhoDia = base * (9 + s) / 10;
+        j->pontos += j->ganhoDia;
+    }
 }
 
 /* ---------------- Minigame dos fios ---------------- */
@@ -780,12 +802,20 @@ static void DesenharMundo(const Jogo *j, EstadoJogo estado, float tempo, Vector2
 }
 
 /* ---------- Programa principal ---------- */
-/* ATUALIZA A VERSATIVIDADE DAQUI PRA FRENTE */
 
 int main(void)
 {
     InitWindow(LARGURA, ALTURA, "VolTerra - Parte 1");
     SetTargetFPS(60);
+    SetRandomSeed((unsigned int)time(NULL));
+
+    Jogo jogo;
+    Minigame mini = {0};
+    int ranking[TAM_RANKING];
+    EstadoJogo estado = ESTADO_MENU;
+
+    CarregarRanking(ranking);
+    IniciarPartida(&jogo);
 
     // Mapa estilizado (coordenadas em pixels, região central da tela)
     Regiao regioes[NUM_REGIOES] = {
