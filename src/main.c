@@ -17,7 +17,7 @@
 #define MAX_EV 5
 
 enum {NORTE, NORDESTE, CENTRO, SUDESTE, SUL};
-typedef enum { MENU, JOGO, MINI, FIM} estado;
+typedef enum { MENU, JOGO, MINI, FIM} Estado;
 typedef enum { MINI_BLACKOUT, MINI_SOBRECARGA} TipoMini;
 
 typedef struct {
@@ -60,6 +60,7 @@ static const Color fios[4] = {     /*cores fios ( Vermelho | Azul | Amarelo | Ve
     {235, 70, 70, 255}, {70, 140, 255, 255}, {255, 220, 50, 255}, {65, 220, 110, 255}
 };
 
+/*eventos aleatórios do seu jogo, cada evento possui um nome e dois conjuntos de modificadores numéricos: */
 static const EvDef evDefs[NUM_EV] = {
     {"Chuvas fortes",     {0.30f, 0.00f, -0.10f, 0.12f, 0.28f}, {0.00f, 0.08f, 0.00f, 0.00f, 0.00f}},
     {"Seca severa",       {-0.40f, 0.10f, 0.00f, -0.25f, -0.30f}, {0.00f, 0.00f, 0.10f, 0.00f, 0.00f}},
@@ -110,419 +111,276 @@ static const float geoSul[][2] = {
     {-48.6f,-26.3f}
 };
 
-/*=============== Continuar aqui Estado global e renovacao as Utilizades ===============*/
-//
-//
+/* --------- Estado Global ------------ */
+
+static Regiao r[N];
+static EvAtivo evs[MAX_EV];
+static int nev = 0;
+static Estado estado = MENU;
+static Minigame mini;
+static int fase, dia, origem, destino, vidas, streak, pontos;
+static float tempoDia, tempoTotal, spawnT, cooldown, msgT, pontosAcum;
+static char msg[200] = "";
+static bool pausa = false, vitoria = false;
+static int ranking[5] = {0, 0, 0, 0, 0};
+static int posRanking = 0;
 
 /* ---------------- Utilidades ---------------- */
-static const char *NomeEvento(TipoEvento evento)
+
+static float projX(float lon) {return 290.0f + (lon + 74.0f) * 15.2f; }
+static float projY(float lat) {return 95.0f + (5.5f - lat) * 15.2f; }
+
+static void criarPoli(Regiao *g, const float (*d)[2], int n)
 {
-    switch (evento) {
-        case EVENTO_CHUVA:    return "Chuvas fortes";
-        case EVENTO_ENCHENTE: return "Enchente";
-        case EVENTO_VENTOS:   return "Ventos fortes";
-        case EVENTO_POLUICAO: return "Poluicao";
-        default:              return "Tempo estavel";
-    }
+    g->n = n;
+    for (int i=0; i<n; i++) g->pt[i] = (Vector2){projX(d[i][0]), projY(d[i][1])};
 }
 
-static void DrawTextCentro(const char *texto, int cx, int y, int tamanho, Color cor)
+static void textoCentro(const char *s, int x, int y, int tam, Color c)
 {
-    DrawText(texto, cx - MeasureText(texto, tamanho) / 2, y, tamanho, cor);
+    DrawText(s, x - MeasureText(s, tam) / 2, y, tam, c);
 }
 
-static bool PontoNoPoligono(Vector2 p, const Vector2 *v, int n)
+static void mensagem(const char *s, float t)
 {
-    bool dentro = false;
+    snprintf(msg, sizeof(msg), "%s", s);
+    msgT = t;
+}
 
+static bool dentro(Vector2 p, const Vector2 *v, int n)
+{
+    bool ok = false;
     for (int i = 0, j = n - 1; i < n; j = i++) {
-        bool cruza = ((v[i].y > p.y) != (v[j].y > p.y));
+        if(((v[i].y > p.y) != (v[j] > p.y)) && p.x < (v[j].x - v[i].x) * (p.y - v[i].y) / (v[j].y - v[i].y) + v[i].x) ok = !ok;
+    }
 
-        if (cruza) {
-            float x = (v[j].x - v[i].x) * (p.y - v[i].y) / (v[j].y - v[i].y) + v[i].x;
-            if (p.x < x) dentro = !dentro;
+    return ok;
+}
+
+static void preencher(const Vector2 *v, int n, Color c)
+{
+    float miny = v[0].y, maxy = v[0].y;
+    for (int i = 1; i < n; i++) {
+        if (v[i].y < miny) miny = v[i].y;
+        if (v[i].y > maxy) maxy = v[i].y;
+    }
+    for (int y = (int)miny; y <= (int)maxy; y++) {
+        float xs[64];
+        int k = 0;
+        float fy = y + 0.5f;
+        for (int i = 0, j = n - 1; i < n; j = i++) {
+            if (((v[i].y > fy) != (v[j].y > fy)) && k < 64) {
+                xs[k++] = v[j].x + (fy - v[j].y) * (v[i].x - v[j].x) / (v[i].y - v[j].y);
+            }
         }
-    }
-
-    return dentro;
-}
-
-// Desenha cada triangulo nos dois sentidos: a raylib descarta o sentido errado.
-static void PreencherPoligono(const Vector2 *p, int n, Color cor, float dx, float dy)
-{
-    Vector2 c = {0.0f, 0.0f};
-
-    for (int i = 0; i < n; i++) {
-        c.x += p[i].x;
-        c.y += p[i].y;
-    }
-
-    c.x = c.x / n + dx;
-    c.y = c.y / n + dy;
-
-    for (int i = 0; i < n; i++) {
-        Vector2 a = {p[i].x + dx, p[i].y + dy};
-        Vector2 b = {p[(i + 1) % n].x + dx, p[(i + 1) % n].y + dy};
-        DrawTriangle(c, a, b, cor);
-        DrawTriangle(c, b, a, cor);
+        for (int a = 1; a < k; a++) {
+            float t = xs[a];
+            int b = a - 1;
+            while (b >= 0 && xs[b] > t) { xs[b + 1] = xs[b]; b--; }
+            xs[b + 1] = t;
+        }
+        for (int a = 0; a + 1 < k; a += 2)
+            DrawRectangle((int)xs[a], y, (int)(xs[a + 1] - xs[a]) + 1, 1, c);
     }
 }
 
-static void DesenharContorno(const Vector2 *p, int n, float espessura, Color cor)
+static void icone(int f, float x, float y, float t)
 {
-    for (int i = 0; i < n; i++) {
-        DrawLineEx(p[i], p[(i + 1) % n], espessura, cor);
-    }
-}
-
-static void DesenharIconeFonte(TipoFonte fonte, Vector2 c, float tempo)
-{
-    switch (fonte) {
-        case FONTE_HIDRO:
-            DrawRectangle(c.x - 18, c.y - 10, 36, 22, (Color){65, 75, 95, 255});
-            DrawRectangle(c.x - 23, c.y + 12, 46, 5, (Color){50, 140, 240, 255});
+    int ix = (int)x, iy = (int)y;
+    switch (f) {
+        case 0:
+            DrawRectangle(ix - 16, iy - 9, 32, 18, (Color){70, 80, 100, 255});
+            DrawRectangle(ix - 20, iy + 9, 40, 5, (Color){50, 150, 245, 255});
             for (int i = 0; i < 3; i++) {
-                float d = fmodf(tempo * 24.0f + i * 9.0f, 18.0f);
-                DrawCircle(c.x - 10 + i * 10, c.y - 4 + d, 2.5f, SKYBLUE);
+                float d = fmodf(t * 22.0f + i * 7.0f, 14.0f);
+                DrawCircle(ix - 9 + i * 9, (int)(y - 3 + d), 2, SKYBLUE);
             }
             break;
-
-        case FONTE_EOLICA: {
-            float angulo = tempo * 120.0f;
-            DrawLineEx((Vector2){c.x, c.y - 5}, (Vector2){c.x, c.y + 23}, 4, RAYWHITE);
+        case 1: {
+            float a0 = t * 120.0f;
+            DrawLineEx((Vector2){x, y - 4}, (Vector2){x, y + 20}, 3, RAYWHITE);
             for (int i = 0; i < 3; i++) {
-                float a = (angulo + i * 120.0f) * DEG2RAD;
-                Vector2 ponta = {c.x + cosf(a) * 23.0f, c.y - 5 + sinf(a) * 23.0f};
-                DrawLineEx((Vector2){c.x, c.y - 5}, ponta, 4, RAYWHITE);
+                float a = (a0 + i * 120.0f) * DEG2RAD;
+                DrawLineEx((Vector2){x, y - 4}, (Vector2){x + cosf(a) * 20, y - 4 + sinf(a) * 20}, 3, RAYWHITE);
             }
-            DrawCircle(c.x, c.y - 5, 5, YELLOW);
+            DrawCircle(ix, iy - 4, 4, YELLOW);
             break;
         }
-
-        case FONTE_SOLAR:
-            DrawCircle(c.x + 15, c.y - 14, 8, YELLOW);
-            DrawRectangle(c.x - 24, c.y - 2, 38, 23, (Color){20, 55, 125, 255});
-            DrawLine(c.x - 24, c.y + 9, c.x + 14, c.y + 9, SKYBLUE);
-            DrawLine(c.x - 5, c.y - 2, c.x - 5, c.y + 21, SKYBLUE);
-            DrawLine(c.x + 7, c.y - 2, c.x + 7, c.y + 21, SKYBLUE);
+        case 2:
+            DrawCircle(ix + 13, iy - 12, 7, YELLOW);
+            DrawRectangle(ix - 20, iy - 2, 34, 20, (Color){20, 55, 125, 255});
+            DrawLine(ix - 20, iy + 8, ix + 14, iy + 8, SKYBLUE);
+            DrawLine(ix - 6, iy - 2, ix - 6, iy + 18, SKYBLUE);
+            DrawLine(ix + 4, iy - 2, ix + 4, iy + 18, SKYBLUE);
             break;
-
-        case FONTE_NUCLEAR:
-            DrawTriangle((Vector2){c.x - 19, c.y + 19}, (Vector2){c.x + 19, c.y + 19},
-                         (Vector2){c.x - 10, c.y - 13}, LIGHTGRAY);
-            DrawTriangle((Vector2){c.x + 10, c.y - 13}, (Vector2){c.x - 10, c.y - 13},
-                         (Vector2){c.x + 19, c.y + 19}, LIGHTGRAY);
-            DrawCircle(c.x + 21, c.y - 17, 6, Fade(WHITE, 0.75f));
-            DrawCircle(c.x + 29, c.y - 22, 5, Fade(WHITE, 0.5f));
-            break;
-
-        case FONTE_BIOMASSA:
-            DrawEllipse(c.x, c.y, 12, 19, GREEN);
-            DrawLineEx((Vector2){c.x, c.y + 19}, (Vector2){c.x, c.y - 16}, 2, DARKGREEN);
-            DrawTriangle((Vector2){c.x - 6, c.y + 25}, (Vector2){c.x + 6, c.y + 25},
-                         (Vector2){c.x, c.y + 12 + sinf(tempo * 5.0f) * 2.0f}, ORANGE);
+        default:
+            DrawRectangle(ix - 13, iy - 6, 26, 22, LIGHTGRAY);
+            DrawRectangle(ix - 9, iy - 14, 18, 8, LIGHTGRAY);
+            DrawCircle(ix + 14, iy - 18 - (int)(fmodf(t * 8.0f, 6.0f)), 5, Fade(WHITE, 0.7f));
+            DrawCircle(ix + 4, iy - 22, 4, Fade(WHITE, 0.5f));
             break;
     }
 }
 
-static Color CorBateria(float bateria)
+static Color CorBateria(float b)
 {
-    if (bateria < 30.0f) return RED;
-    if (bateria < 55.0f) return ORANGE;
+    if (b < LIM_BAIXO) return RED;
+    if (b < LIM_ALTO + 10) return ORANGE;
+    if (b > LIM_ALTO) return (Color){255, 120, 60, 255};
     return (Color){80, 220, 150, 255};
 }
 
-static void DesenharBarraBateria(float x, float y, float largura, float altura,
-                                 float bateria, float limite, bool ativa)
+static int regioesNaFase(int f) { return f <= 1 ? 3 : (f == 2 ? 4 : 5); }
+
+static int totalAtivas(void)
 {
-    DrawRectangle(x, y, largura, altura, (Color){25, 30, 45, 255});
+    int c = 0;
+    for (int i = 0; i < N; i++)
+        if (r[i].ativa) c++;
 
-    if (ativa) {
-        float p = bateria / 100.0f;
-        if (p < 0.0f) p = 0.0f;
-        if (p > 1.0f) p = 1.0f;
-        DrawRectangle(x + 2, y + 2, (largura - 4) * p, altura - 4, CorBateria(bateria));
-
-        float lx = x + largura * (limite / 100.0f);
-        DrawLineEx((Vector2){lx, y - 3}, (Vector2){lx, y + altura + 3}, 2, WHITE);
-    }
-
-    DrawRectangleLines(x, y, largura, altura, ativa ? LIGHTGRAY : DARKGRAY);
-}
-
-/* ---------------- Regioes e eventos ---------------- */
-
-static void CriarRegioes(Regiao *saida)
-{
-    Regiao modelo[NUM_REGIOES] = {
-        {   // NORTE
-            "Norte", "Hidreletrica", FONTE_HIDRO, {46, 139, 87, 255},
-            { {290,250}, {310,170}, {440,110}, {560,115}, {650,95}, {720,130},
-              {755,145}, {745,230}, {720,300}, {580,320}, {440,310}, {310,295} },
-            12, {520, 205}, 100.0f, 0.90f, 0.95f, 20.0f, false
-        },
-        {   // NORDESTE
-            "Nordeste", "Eolica", FONTE_EOLICA, {218, 165, 32, 255},
-            { {755,145}, {790,160}, {860,165}, {910,200}, {905,250}, {880,300},
-              {860,350}, {840,400}, {780,385}, {735,340}, {720,300}, {745,230} },
-            12, {830, 260}, 100.0f, 0.95f, 1.00f, 50.0f, true
-        },
-        {   // CENTRO-OESTE
-            "Centro-Oeste", "Solar", FONTE_SOLAR, {210, 105, 30, 255},
-            { {310,295}, {440,310}, {580,320}, {720,300}, {735,340}, {780,385},
-              {710,415}, {655,450}, {650,505}, {610,540}, {590,490}, {540,450},
-              {470,420}, {400,380}, {330,340} },
-            15, {540, 385}, 100.0f, 0.88f, 0.93f, 20.0f, false
-        },
-        {   // SUDESTE
-            "Sudeste", "Nuclear", FONTE_NUCLEAR, {160, 82, 160, 255},
-            { {840,400}, {810,450}, {770,490}, {730,530}, {700,500}, {650,505},
-              {655,450}, {710,415}, {780,385} },
-            9, {745, 450}, 100.0f, 0.92f, 1.05f, 50.0f, true
-        },
-        {   // SUL
-            "Sul", "Hidreletrica", FONTE_HIDRO, {65, 105, 225, 255},
-            { {730,530}, {690,575}, {640,590}, {610,540}, {650,505}, {700,500} },
-            6, {668, 538}, 100.0f, 0.88f, 0.93f, 20.0f, false
-        }
-    };
-
-    for (int i = 0; i < NUM_REGIOES; i++) {
-        saida[i] = modelo[i];
-    }
-}
-
-static int RegioesDaFase(int fase)
-{
-    if (fase <= 1) return 3;
-    if (fase == 2) return 4;
-    return 5;
-}
-
-static int FaseLiberacao(int id)
-{
-    for (int k = 0; k < NUM_REGIOES; k++) {
-        if (ordemAtivacao[k] == id) return (k < 3) ? 1 : k - 1;
-    }
-    return 1;
-}
-
-static float IntensidadeFase(int fase)
-{
-    return 1.0f + 0.2f * (fase - 1);
-}
-
-// Efeitos negativos de producao crescem com a intensidade.
-static float ProdEv(float f, float k)
-{
-    if (f >= 1.0f) return f;
-    float r = 1.0f - (1.0f - f) * k;
-    return (r < 0.30f) ? 0.30f : r;
-}
-
-// Efeitos negativos de consumo crescem com a intensidade.
-static float ConsEv(float f, float k)
-{
-    if (f <= 1.0f) return f;
-    return 1.0f + (f - 1.0f) * k;
-}
-
-static void AplicarEvento(Regiao *r, TipoEvento evento, float k)
-{
-    static const float prodBase[NUM_REGIOES] = {0.90f, 0.95f, 0.88f, 0.92f, 0.88f};
-    static const float consBase[NUM_REGIOES] = {0.95f, 1.00f, 0.93f, 1.05f, 0.93f};
-
-    for (int i = 0; i < NUM_REGIOES; i++) {
-        r[i].producao = prodBase[i];
-        r[i].consumo = consBase[i];
-    }
-
-    switch (evento) {
-        case EVENTO_CHUVA:
-            r[NORTE].producao    *= ProdEv(1.25f, k);
-            r[SUL].producao      *= ProdEv(1.20f, k);
-            r[SUDESTE].producao  *= ProdEv(1.15f, k);
-            r[CENTRO_OESTE].producao *= ProdEv(0.90f, k);
-            break;
-
-        case EVENTO_ENCHENTE:
-            r[NORTE].producao    *= ProdEv(0.65f, k);
-            r[NORDESTE].producao *= ProdEv(0.80f, k);
-            r[SUL].producao      *= ProdEv(0.85f, k);
-            r[SUDESTE].producao  *= ProdEv(0.90f, k);
-            break;
-
-        case EVENTO_VENTOS:
-            r[NORDESTE].producao *= ProdEv(1.35f, k);
-            r[CENTRO_OESTE].consumo *= ConsEv(1.15f, k);
-            r[SUL].consumo       *= ConsEv(1.10f, k);
-            break;
-
-        case EVENTO_POLUICAO:
-            r[CENTRO_OESTE].producao *= ProdEv(0.70f, k);
-            r[SUDESTE].consumo   *= ConsEv(1.35f, k);
-            r[NORDESTE].consumo  *= ConsEv(1.15f, k);
-            break;
-
-        default:
-            break;
-    }
+    return c;
 }
 
 /* ---------------- Ranking ---------------- */
 
-static void CarregarRanking(int ranking[])
+static void carregarRanking(void)
 {
-    for (int i = 0; i < TAM_RANKING; i++) ranking[i] = 0;
-
     FILE *f = fopen("ranking.txt", "r");
     if (!f) return;
-
-    for (int i = 0; i < TAM_RANKING; i++) {
-        if (fscanf(f, "%d", &ranking[i]) != 1) break;
-    }
-
+    for (int i = 0; i < 5; i++) if (fscanf(f, "%d", &ranking[i]) != 1) ranking[i] = 0;
     fclose(f);
 }
 
-static int InserirRanking(int ranking[], int pontos)
+static void registrarRanking(void)
 {
-    int pos = -1;
-
-    if (pontos <= 0) return 0;
-
-    for (int i = 0; i < TAM_RANKING; i++) {
+    posRanking = 0;
+    for (int i = 0; i < 5; i++) {
         if (pontos > ranking[i]) {
-            pos = i;
+            for (int j = 4; j > i; j--) ranking[j] = ranking[j - 1];
+            ranking[i] = pontos;
+            posRanking = i + 1;
             break;
         }
     }
-
-    if (pos < 0) return 0;
-
-    for (int i = TAM_RANKING - 1; i > pos; i--) {
-        ranking[i] = ranking[i - 1];
-    }
-    ranking[pos] = pontos;
-
     FILE *f = fopen("ranking.txt", "w");
-    if (f) {
-        for (int i = 0; i < TAM_RANKING; i++) fprintf(f, "%d\n", ranking[i]);
-        fclose(f);
-    }
-
-    return pos + 1;
+    if (!f) return;
+    for (int i = 0; i < 5; i++) fprintf(f, "%d\n", ranking[i]);
+    fclose(f);
 }
 
-static void DesenharRanking(const int ranking[], int cx, int y, int destaque)
+static void fimDePartida(bool venceu)
 {
-    DrawTextCentro("RANKING", cx, y, 22, YELLOW);
+    vitoria = venceu;
+    registrarRanking();
+    estado = FIM;
+}
 
-    for (int i = 0; i < TAM_RANKING; i++) {
-        char linha[64];
+/* ---------- Inicializacao ---------- */
 
-        if (ranking[i] > 0) snprintf(linha, sizeof(linha), "%d.  %d pts", i + 1, ranking[i]);
-        else                snprintf(linha, sizeof(linha), "%d.  ---", i + 1);
+static void setReg(int id, const char *nome, Color cor, int fonte, float cons, float lon, float lat)
+{
+    r[id].nome = nome;
+    r[id].cor = cor;
+    r[id].fonte = fonte;
+    r[id].consBase = cons;
+    r[id].c = (Vector2){projX(lon), projY(lat)};
+}
 
-        DrawTextCentro(linha, cx, y + 30 + i * 24, 20,
-                       (destaque == i + 1) ? (Color){100, 240, 150, 255} : WHITE);
+static void iniciarRegioes(void)
+{
+    memset(r, 0, sizeof(r));
+    setReg(NORTE, "Norte", (Color){46, 150, 95, 255}, 0, 0.92f, -62.0f, -4.5f);
+    setReg(NORDESTE, "Nordeste", (Color){225, 175, 40, 255}, 1, 1.00f, -42.5f, -8.0f);
+    setReg(CENTRO, "Centro-Oeste", (Color){215, 115, 45, 255}, 2, 0.93f, -54.0f, -14.5f);
+    setReg(SUDESTE, "Sudeste", (Color){155, 90, 170, 255}, 3, 1.05f, -45.0f, -19.0f);
+    setReg(SUL, "Sul", (Color){65, 110, 230, 255}, 0, 0.95f, -52.0f, -27.0f);
+
+    criarPoli(&r[NORTE], geoNorte, (int)(sizeof(geoNorte) / sizeof(geoNorte[0])));
+    criarPoli(&r[NORDESTE], geoNordeste, (int)(sizeof(geoNordeste) / sizeof(geoNordeste[0])));
+    criarPoli(&r[CENTRO], geoCentro, (int)(sizeof(geoCentro) / sizeof(geoCentro[0])));
+    criarPoli(&r[SUDESTE], geoSudeste, (int)(sizeof(geoSudeste) / sizeof(geoSudeste[0])));
+    criarPoli(&r[SUL], geoSul, (int)(sizeof(geoSul) / sizeof(geoSul[0])));
+
+    for (int i = 0; i < N; i++) {
+        r[i].bat = 70.0f;
+        r[i].ajuste = 1.0f;
+        r[i].multProd = 1.0f;
+        r[i].multCons = 1.0f;
     }
 }
 
-/* ---------------- Logica da partida ---------------- */
-
-static void SortearDia(Jogo *j)
+static void ativarFase(void)
 {
-    j->evento = (TipoEvento)GetRandomValue(EVENTO_CHUVA, EVENTO_POLUICAO);
-    AplicarEvento(j->regioes, j->evento, IntensidadeFase(j->fase));
-
-    if (j->ganhoDia > 0) {
-        snprintf(j->mensagem, sizeof(j->mensagem),
-                 "Fase %d, dia %d: %s! (dia anterior: +%d pts)",
-                 j->fase, j->dia, NomeEvento(j->evento), j->ganhoDia);
-    } else {
-        snprintf(j->mensagem, sizeof(j->mensagem),
-                 "Fase %d, dia %d: %s!", j->fase, j->dia, NomeEvento(j->evento));
+    int qtd = regioesNaFase(fase);
+    for (int k = 0; k < qtd; k++) {
+        int id = ordemFase[k];
+        if (!r[id].ativa) { r[id].ativa = true; r[id].bat = 70.0f; }
     }
-    j->mensagemTempo = 5.0f;
 }
 
-static void ConfigurarFase(Jogo *j)
+static void iniciarPartida(void)
 {
-    int qtd = RegioesDaFase(j->fase);
+    iniciarRegioes();
+    fase = 1; dia = 1; vidas = 3; streak = 0; pontos = 0;
+    origem = SUDESTE; destino = NORDESTE;
+    tempoDia = 0; tempoTotal = 0; spawnT = 4.0f; cooldown = 0; pontosAcum = 0;
+    nev = 0; pausa = false; vitoria = false;
+    ativarFase();
+    mensagem("Mantenha cada regiao entre 50% e 85%!", 5.0f);
+    estado = JOGO;
+}
 
-    for (int i = 0; i < NUM_REGIOES; i++) j->regioes[i].ativa = false;
-    for (int k = 0; k < qtd; k++) j->regioes[ordemAtivacao[k]].ativa = true;
+/* ---------- Eventos --------------*/
 
-    for (int i = 0; i < NUM_REGIOES; i++) {
-        Regiao *r = &j->regioes[i];
-        r->economiaTempo = 0.0f;
-        r->recarga = 0.0f;
-        r->emBlackout = false;
-        r->blackoutTempo = 0.0f;
+static bool eventoAfeta(int id){
+    for (int i=0; i<N; i++){
+        if(!r[i].ativa) continue;
+        if (fabsf(evDefs[id].prod[i]) > 0.05f || fabsf(evDefs[id].cons[i]) > 0.05f) return True;
+    }
+    return false;
+}
 
-        if (r->ativa) {
-            r->bateria += 35.0f;
-            if (r->bateria > 100.0f) r->bateria = 100.0f;
+static void spawnEvento(void){
+    int id = -1;
+    for (int tent = 0; tent <30 && id < 0; tent++){
+        int c = GetRandomValue(0, NUM_EV - 1);
+        bool repetido = false;
+        for (int i=0; i< nev; i++) if (evs[i].id == c) repetido = true;
+        if(!repetido && eventoAfeta(c)) id = c;
+    }
+    if(id < 0){ spawnT = 3.0f; return;}
+
+    evs[nev].id = id;
+    evs[nev].dur = 22.0f;
+    evs[nev].t = 22.0f;
+    nev++;
+
+    char buf[120];
+    snprintf(buf, sizeof(buf), "Novo evento: %d!", evDefs[id].nome);
+    mensagem(buf, 4.0f);
+
+    spawnT = 12.0f - 1.8f * (fase - 1) + GetRandomValue(0, 30)/10.0f;
+}
+
+static void atualizarMultiplicadores(void)
+{
+    float intens = 1.0f + 0.2f * (fase - 1);
+    for (int i = 0; i < N; i++) {
+        float mp = 1.0f, mc = 1.0f;
+        for (int e = 0; e < nev; e++) {
+            mp += evDefs[evs[e].id].prod[i] * intens;
+            mc += evDefs[evs[e].id].cons[i] * intens;
         }
-    }
-
-    if (!j->regioes[j->selecionada].ativa) j->selecionada = ordemAtivacao[0];
-
-    j->dia = 1;
-    j->tempoDia = 0.0f;
-    j->tempoFase = 0.0f;
-    j->ganhoDia = 0;
-    j->linhaTempo = 0.0f;
-
-    SortearDia(j);
-}
-
-static void IniciarPartida(Jogo *j)
-{
-    CriarRegioes(j->regioes);
-
-    j->fase = 1;
-    j->selecionada = SUDESTE;
-    j->pontos = 0;
-    j->pontosExibidos = 0.0f;
-    j->sequencia = 0;
-    j->ganhoDia = 0;
-    j->origem = -1;
-    j->destino = -1;
-    j->vitoria = false;
-    j->posicaoRanking = 0;
-
-    ConfigurarFase(j);
-}
-
-static void EncerrarDia(Jogo *j)
-{
-    float soma = 0.0f;
-    int n = 0;
-    bool alerta = false;
-
-    for (int i = 0; i < NUM_REGIOES; i++) {
-        const Regiao *r = &j->regioes[i];
-        if (!r->ativa) continue;
-        soma += r->bateria;
-        n++;
-        if (r->emBlackout) alerta = true;
-    }
-
-    float media = (n > 0) ? soma / n : 0.0f;
-
-    if (alerta) {
-        j->sequencia = 0;
-        j->ganhoDia = 0;
-    } else {
-        j->sequencia++;
-        int s = (j->sequencia > 6) ? 6 : j->sequencia;
-        int base = 100 * j->fase + (int)(media * 2.0f);
-        j->ganhoDia = base * (9 + s) / 10;
-        j->pontos += j->ganhoDia;
+        mc *= 1.0f + 0.05f * sinf(tempoTotal * 0.4f + i * 1.7f);
+        if (mp < 0.2f) mp = 0.2f;
+        if (mc < 0.3f) mc = 0.3f;
+        r[i].multProd = mp;
+        r[i].multCons = mc;
     }
 }
+
+/* -------  Ajustar MINIGAMES AQUI:  ------- */
+
 
 /* ---------------- Minigame dos fios ---------------- */
 
