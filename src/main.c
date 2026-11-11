@@ -914,55 +914,60 @@ int main(void)
 
         char buf[160];
         
-        // continuar aqui:
+        if (estado == ESTADO_MINIGAME) {
+            MinigameDesenhar(&mini, j->regioes[mini.regiao].nome);
+        }
+        else if (estado == ESTADO_MENU) {
+            DrawRectangle(0, 0, LARGURA, ALTURA, Fade(BLACK, 0.80f));
+            DrawTextCentro("VOLTERRA", 640, 90, 80, (Color){255, 220, 80, 255});
+            DrawTextCentro("A crise das cinco noites", 640, 175, 24, LIGHTGRAY);
 
+            DrawTextCentro("5 fases de 2 minutos = 10 minutos de partida", 640, 235, 20, WHITE);
+            DrawTextCentro("Fase 1: 3 regioes   |   Fase 2: 4 regioes   |   Fases 3 a 5: 5 regioes", 640, 262, 18, LIGHTGRAY);
+            DrawTextCentro("Regiao abaixo do limite = 10 s para salvar, ou cai o minigame dos fios", 640, 288, 18, LIGHTGRAY);
 
+            DesenharRanking(ranking, 640, 340, 0);
 
-        
-        // Título
-        DrawText("VOLTERRA", 30, 20, 40, (Color){255, 220, 80, 255});
-        DrawText("Controle a energia do Brasil", 30, 66, 18, LIGHTGRAY);
+            if (((int)(tempo * 2.0f)) % 2 == 0) {
+                DrawTextCentro("Pressione ENTER para comecar", 640, 530, 26, (Color){100, 240, 150, 255});
+            }
+        }
+        else if (estado == ESTADO_FASE) {
+            DrawRectangle(0, 0, LARGURA, ALTURA, Fade(BLACK, 0.78f));
 
-        // Estrelas decorativas do fundo
-        for (int i = 0; i < 60; i++) {
-            int x = (i * 197) % LARGURA;
-            int y = (i * 91) % 560;
-            float brilho = 0.4f + 0.6f * fabsf(sinf(t + i));
-            DrawPixel(x, y, Fade(WHITE, brilho));
+            snprintf(buf, sizeof(buf), "FASE %d CONCLUIDA!", j->fase - 1);
+            DrawTextCentro(buf, 640, 190, 54, (Color){100, 240, 150, 255});
+
+            snprintf(buf, sizeof(buf), "Pontos: %d  (bonus de fase: +%d)", j->pontos, 300 * (j->fase - 1));
+            DrawTextCentro(buf, 640, 270, 24, WHITE);
+
+            snprintf(buf, sizeof(buf), "Proxima: Fase %d  |  %d regioes ativas  |  eventos mais fortes",
+                     j->fase, RegioesDaFase(j->fase));
+            DrawTextCentro(buf, 640, 315, 20, LIGHTGRAY);
+
+            DrawTextCentro("As baterias recuperam 35% antes da proxima fase.", 640, 345, 18, LIGHTGRAY);
+            DrawTextCentro("Pressione ENTER para continuar", 640, 420, 26, YELLOW);
+        }
+        else if (estado == ESTADO_FIM) {
+            DrawRectangle(0, 0, LARGURA, ALTURA, Fade(BLACK, 0.80f));
+
+            DrawTextCentro(j->vitoria ? "BRASIL SALVO!" : "APAGAO NACIONAL", 640, 90, 56,
+                           j->vitoria ? (Color){100, 240, 150, 255} : RED);
+            DrawTextCentro(j->mensagem, 640, 160, 20, WHITE);
+
+            snprintf(buf, sizeof(buf), "Pontuacao final: %d", j->pontos);
+            DrawTextCentro(buf, 640, 200, 30, (Color){255, 220, 80, 255});
+
+            if (j->posicaoRanking > 0) {
+                snprintf(buf, sizeof(buf), "Voce entrou no ranking: posicao #%d!", j->posicaoRanking);
+                DrawTextCentro(buf, 640, 245, 22, (Color){100, 240, 150, 255});
+            }
+
+            DesenharRanking(ranking, 640, 300, j->posicaoRanking);
+            DrawTextCentro("R: jogar de novo   |   ESC: sair", 640, 500, 22, LIGHTGRAY);
         }
 
-        // Regiões
-        for (int i = 0; i < NUM_REGIOES; i++) {
-            Regiao *r = &regioes[i];
-            Color c = r->cor;
-            if (i == hover) c = ColorBrightness(c, 0.2f);
-            // sombra
-            PreencherPoligono(r->pontos, r->numPontos, r->centro, Fade(BLACK, 0.35f));
-            PreencherPoligono(r->pontos, r->numPontos, r->centro, c);
-            ContornoPoligono(r->pontos, r->numPontos, i == selecionada ? 5 : 2,
-                             i == selecionada ? WHITE : (Color){20, 20, 30, 255});
-        }
-
-        // Ícones e nomes
-        for (int i = 0; i < NUM_REGIOES; i++) {
-            DesenharIcone(regioes[i].fonte, regioes[i].centro, t);
-            int w = MeasureText(regioes[i].nome, 18);
-            DrawText(regioes[i].nome, regioes[i].centro.x - w / 2,
-                     regioes[i].centro.y + 34, 18, WHITE);
-        }
-
-        // Painel inferior (controles)
-        DrawRectangle(0, 630, LARGURA, 90, (Color){20, 26, 50, 255});
-        DrawLine(0, 630, LARGURA, 630, (Color){255, 220, 80, 255});
-        char info[128];
-        snprintf(info, sizeof(info), "Regiao: %s | Fonte: %s | Bateria: %.0f%%",
-                 regioes[selecionada].nome, regioes[selecionada].fonteNome,
-                 regioes[selecionada].bateria);
-        DrawText(info, 30, 645, 22, WHITE);
-        DrawText("Mouse: clique na regiao   |   WASD: trocar de regiao   |   ESC: sair",
-                 30, 685, 18, LIGHTGRAY);
-
-        DrawFPS(LARGURA - 90, 10);
+        DrawFPS(LARGURA - 75, ALTURA - 25);
         EndDrawing();
     }
 
