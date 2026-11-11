@@ -817,71 +817,108 @@ int main(void)
     CarregarRanking(ranking);
     IniciarPartida(&jogo);
 
-    // Mapa estilizado (coordenadas em pixels, região central da tela)
-    Regiao regioes[NUM_REGIOES] = {
-        { "Norte", "Hidreletrica", FONTE_HIDRO, (Color){46, 139, 87, 255},
-          { {380,90}, {640,70}, {760,150}, {740,260}, {560,290}, {400,250}, {340,170} }, 7,
-          {560, 180}, 100 },
-
-        { "Nordeste", "Eolica", FONTE_EOLICA, (Color){218, 165, 32, 255},
-          { {760,150}, {900,170}, {960,260}, {900,350}, {780,380}, {740,260} }, 6,
-          {850, 270}, 100 },
-
-        { "Centro-Oeste", "Solar", FONTE_SOLAR, (Color){210, 105, 30, 255},
-          { {560,290}, {740,260}, {780,380}, {720,450}, {560,450}, {470,360} }, 6,
-          {630, 365}, 100 },
-
-        { "Sudeste", "Nuclear", FONTE_NUCLEAR, (Color){160, 82, 160, 255},
-          { {780,380}, {900,350}, {880,450}, {800,520}, {720,500}, {720,450} }, 6,
-          {800, 440}, 100 },
-
-        { "Sul", "Hidreletrica", FONTE_HIDRO, (Color){65, 105, 225, 255},
-          { {560,450}, {720,450}, {720,500}, {680,580}, {600,610}, {540,540} }, 6,
-          {630, 520}, 100 }
-    };
-
-    int selecionada = 0;   // região selecionada (WASD ou mouse)
-    int hover = -1;
-
     while (!WindowShouldClose()) {
-        float t = (float)GetTime();
+        Jogo *j = &jogo;
+        float dt = GetFrameTime();
+        if (dt > 0.05f) dt = 0.05f;
+        float tempo = (float)GetTime();
         Vector2 mouse = GetMousePosition();
 
-        /* --- Entrada: mouse --- */
-        hover = -1;
-        for (int i = 0; i < NUM_REGIOES; i++) {
-            if (PontoNoPoligono(mouse, regioes[i].pontos, regioes[i].numPontos)) {
-                hover = i;
-                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) selecionada = i;
+        if (estado == ESTADO_MENU) {
+            if (IsKeyPressed(KEY_ENTER)) {
+                IniciarPartida(j);
+                estado = ESTADO_JOGO;
             }
         }
-
-        /* --- Entrada: WASD (move a seleção para a região mais próxima na direção) --- */
-        Vector2 dir = {0, 0};
-        if (IsKeyPressed(KEY_W)) dir.y = -1;
-        if (IsKeyPressed(KEY_S)) dir.y =  1;
-        if (IsKeyPressed(KEY_A)) dir.x = -1;
-        if (IsKeyPressed(KEY_D)) dir.x =  1;
-
-        if (dir.x != 0 || dir.y != 0) {
-            int melhor = selecionada;
-            float melhorDist = 1e9f;
-            Vector2 origem = regioes[selecionada].centro;
-            for (int i = 0; i < NUM_REGIOES; i++) {
-                if (i == selecionada) continue;
-                Vector2 d = { regioes[i].centro.x - origem.x, regioes[i].centro.y - origem.y };
-                float proj = d.x * dir.x + d.y * dir.y;   // quanto está na direção
-                if (proj <= 0) continue;
-                float dist = sqrtf(d.x * d.x + d.y * d.y);
-                if (dist < melhorDist) { melhorDist = dist; melhor = i; }
+        else if (estado == ESTADO_FASE) {
+            if (IsKeyPressed(KEY_ENTER)) {
+                ConfigurarFase(j);
+                estado = ESTADO_JOGO;
             }
-            selecionada = melhor;
         }
+        else if (estado == ESTADO_FIM) {
+            if (IsKeyPressed(KEY_R)) {
+                IniciarPartida(j);
+                estado = ESTADO_JOGO;
+            }
+        }
+        else if (estado == ESTADO_MINIGAME) {
+            int res = MinigameAtualizar(&mini, dt);
+            
+            if (res == 1) {
+                Regiao *r = &j->regioes[mini.regiao];
+                r->bateria = r->limiteBlackout + 25.0f;
+                if (r->bateria > 100.0f) r->bateria = 100.0f;
+                r->emBlackout = false;
+                r->blackoutTempo = 0.0f;
+                j->pontos += 50;
 
-        /* --- Desenho --- */
+                snprintf(j->mensagem, sizeof(j->mensagem),
+                         "Rede restaurada em %s! +50 pontos", r->nome);
+                j->mensagemTempo = 4.0f;
+                estado = ESTADO_JOGO;
+            }
+            else if (res == -1) {
+                snprintf(j->mensagem, sizeof(j->mensagem),
+                         "BLACKOUT! %s ficou no escuro e o Brasil apagou.",
+                         j->regioes[mini.regiao].nome);
+                j->vitoria = false;
+                j->posicaoRanking = InserirRanking(ranking, j->pontos);
+                estado = ESTADO_FIM;
+            }
+        }
+        else if (estado == ESTADO_JOGO) {
+            j->tempoDia += dt;
+            j->tempoFase += dt;
+
+            if (j->linhaTempo > 0.0f) j->linhaTempo -= dt;
+            if (j->mensagemTempo > 0.0f) j->mensagemTempo -= dt;
+
+            // Selecao por teclado: vai para a regiao ativa mais proxima na direcao.
+            Vector2 dir = {0.0f, 0.0f};
+            if (IsKeyPressed(KEY_W)) dir.y = -1.0f;
+            else if (IsKeyPressed(KEY_S)) dir.y = 1.0f;
+            else if (IsKeyPressed(KEY_A)) dir.x = -1.0f;
+            else if (IsKeyPressed(KEY_D)) dir.x = 1.0f;
+
+            if (dir.x != 0.0f || dir.y != 0.0f) {
+                int melhor = -1;
+                float melhorScore = 1e9f;
+                Vector2 o = j->regioes[j->selecionada].centro;
+
+                for (int i = 0; i < NUM_REGIOES; i++) {
+                    if (i == j->selecionada || !j->regioes[i].ativa) continue;
+
+                    float dx = j->regioes[i].centro.x - o.x;
+                    float dy = j->regioes[i].centro.y - o.y;
+                    float proj = dx * dir.x + dy * dir.y;
+                    if (proj <= 0.0f) continue;
+
+                    float dist2 = dx * dx + dy * dy;
+                    float score = dist2 / proj;
+
+                    if (score < melhorScore) {
+                        melhorScore = score;
+                        melhor = i;
+                    }
+                }
+
+                if (melhor >= 0) j->selecionada = melhor;
+            }
+
+        /* ------------ Desenho ------------ */
         BeginDrawing();
-        ClearBackground((Color){10, 14, 30, 255});
+        ClearBackground(BLACK);
 
+        DesenharMundo(j, estado, tempo, mouse);
+
+        char buf[160];
+        
+        // continuar aqui:
+
+
+
+        
         // Título
         DrawText("VOLTERRA", 30, 20, 40, (Color){255, 220, 80, 255});
         DrawText("Controle a energia do Brasil", 30, 66, 18, LIGHTGRAY);
