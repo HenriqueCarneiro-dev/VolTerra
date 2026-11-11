@@ -2,119 +2,119 @@
 #include <math.h>
 #include <stdio.h>
 #include <time.h>
+#include <string.h>
 
-#define LARGURA 1280
-#define ALTURA 720
-#define NUM_REGIOES 5
-#define TOTAL_FASES 5
-#define DIAS_POR_FASE 4
-#define DURACAO_DIA 30.0f
-#define DURACAO_FASE (DURACAO_DIA * DIAS_POR_FASE)
-#define TEMPO_BLACKOUT 10.0f
-#define TEMPO_MINIGAME 15.0f
-#define TAM_RANKING 5
-#define FATOR_SIMULACAO 3.5f
-#define FATOR_ECONOMIA 0.55f
+#define W 1280
+#define H 720
+#define N 5
+#define FASES 5
+#define DIAS 4
+#define DIA_SEG 30.0f
+#define LIM_BAIXO 50.0f
+#define LIM_ALTO 85.0f
+#define TEMPO_ALERTA 10.0f
+#define NUM_EV 9
+#define MAX_EV 5
 
-typedef enum {
-    NORTE = 0,
-    NORDESTE,
-    CENTRO_OESTE,
-    SUDESTE,
-    SUL
-} IdRegiao;
-
-typedef enum {
-    FONTE_HIDRO,
-    FONTE_EOLICA,
-    FONTE_SOLAR,
-    FONTE_NUCLEAR,
-    FONTE_BIOMASSA
-} TipoFonte;
-
-typedef enum {
-    EVENTO_NORMAL,
-    EVENTO_CHUVA,
-    EVENTO_ENCHENTE,
-    EVENTO_VENTOS,
-    EVENTO_POLUICAO
-} TipoEvento;
-
-typedef enum {
-    ESTADO_MENU,
-    ESTADO_JOGO,
-    ESTADO_MINIGAME,
-    ESTADO_FASE,
-    ESTADO_FIM
-} EstadoJogo;
+enum {NORTE, NORDESTE, CENTRO, SUDESTE, SUL};
+typedef enum { MENU, JOGO, MINI, FIM} estado;
+typedef enum { MINI_BLACKOUT, MINI_SOBRECARGA} TipoMini;
 
 typedef struct {
     const char *nome;
-    const char *fonteNome;
-    TipoFonte fonte;
     Color cor;
-
-    Vector2 pontos[16];
-    int numPontos;
-    Vector2 centro;
-
-    float bateria;
-    float producao;
-    float consumo;
-    float limiteBlackout;
-    bool cidadeGrande;
-
-    float economiaTempo;
-    float recarga;
-    bool ativa;
-    bool emBlackout;
-    float blackoutTempo;
+    int fonte;
+    Vector2 pt[56];
+    int n;
+    Vector2 c;
+    float bat, ajuste, consBase;
+    float multProd, multCons;
+    bool ativa, inBlack, inSobre;
+    float tBlack, tSobre;
 } Regiao;
 
 typedef struct {
-    Regiao regioes[NUM_REGIOES];
-    int fase;
-    int dia;
-    int selecionada;
-    float tempoDia;
-    float tempoFase;
+    const char *nome;
+    float prod[N];
+    float cons[N];
+} EvDef;
 
-    int pontos;
-    float pontosExibidos;
-    int sequencia;
-    int ganhoDia;
-
-    TipoEvento evento;
-    int origem;
-    int destino;
-    float linhaTempo;
-
-    char mensagem[160];
-    float mensagemTempo;
-
-    bool vitoria;
-    int posicaoRanking;
-} Jogo;
+typedef struct { int id; float t, dur; } EvAtivo;
 
 typedef struct {
-    int ordem[4];        // ordem[j] = cor que esta no slot j da direita
-    bool ligado[4];
-    int ligadoPara[4];
-    int arrastando;
+    TipoMini tipo;
+    int reg;
     float tempo;
-    int regiao;
+    int ordem[4];
+    bool ligados[4];
+    int destino[4];
+    int arrasta;
+    float calor[4], taxa[4];
 } Minigame;
 
-static const int ordemAtivacao[NUM_REGIOES] = {SUDESTE, NORDESTE, CENTRO_OESTE, SUL, NORTE};
-static const Color coresFio[4] = {
-    {230, 60, 60, 255},
-    {60, 130, 255, 255},
-    {250, 220, 60, 255},
-    {70, 210, 100, 255}
+/* ---------- Dados Mapa/Task---------- */
+
+static const char *abrev[N] = {"Norte", "Nordeste", "C.Oeste", "Sudeste", "Sul"};
+static const int ordemFase[N] = {SUDESTE, NORDESTE, CENTRO, SUL, NORTE};
+static const Color fios[4] = {     /*cores fios ( Vermelho | Azul | Amarelo | Verde )*/
+    {235, 70, 70, 255}, {70, 140, 255, 255}, {255, 220, 50, 255}, {65, 220, 110, 255}
 };
 
-/* ---------------- Utilidades ---------------- */
+static const EvDef evDefs[NUM_EV] = {
+    {"Chuvas fortes",     {0.30f, 0.00f, -0.10f, 0.12f, 0.28f}, {0.00f, 0.08f, 0.00f, 0.00f, 0.00f}},
+    {"Seca severa",       {-0.40f, 0.10f, 0.00f, -0.25f, -0.30f}, {0.00f, 0.00f, 0.10f, 0.00f, 0.00f}},
+    {"Onda de calor",     {0.00f, 0.12f, 0.30f, 0.00f, 0.00f}, {0.05f, 0.30f, 0.20f, 0.28f, 0.10f}},
+    {"Ventos fortes",     {0.00f, 0.45f, 0.00f, 0.00f, 0.20f}, {0.08f, 0.00f, 0.00f, 0.00f, 0.00f}},
+    {"Frente fria",       {0.00f, -0.15f, 0.00f, 0.00f, 0.00f}, {0.08f, 0.00f, 0.00f, 0.20f, 0.38f}},
+    {"Jogo decisivo",     {0.00f, 0.00f, 0.00f, 0.00f, 0.00f}, {0.00f, 0.20f, 0.00f, 0.40f, 0.10f}},
+    {"Manutencao nuclear",{0.00f, 0.00f, 0.00f, -0.45f, 0.00f}, {0.00f, 0.00f, 0.00f, 0.00f, 0.00f}},
+    {"Sol forte",         {0.00f, 0.05f, 0.35f, 0.05f, 0.10f}, {0.00f, 0.00f, 0.00f, 0.00f, 0.00f}},
+    {"Pico industrial",   {0.00f, 0.00f, 0.00f, 0.00f, 0.00f}, {0.00f, 0.10f, 0.12f, 0.35f, 0.25f}}
+};
 
+/* ----------- Contornos Reais aproximados: longitude e latitude ----------- */
+static const float geoNorte[][2] = {
+    {-73.8f,-7.4f},{-72.8f,-5.2f},{-70.1f,-4.2f},{-70.0f,-2.0f},{-69.4f,-0.8f},{-69.6f,0.7f},
+    {-67.3f,2.2f},{-65.4f,1.5f},{-64.0f,4.1f},{-61.5f,4.5f},{-60.7f,5.2f},{-59.9f,4.0f},
+    {-60.0f,2.0f},{-58.5f,1.3f},{-56.5f,1.9f},{-54.6f,2.3f},{-52.9f,2.2f},{-51.7f,4.2f},
+    {-50.8f,2.0f},{-50.0f,0.6f},{-50.6f,-0.4f},{-49.0f,-1.2f},{-47.3f,-0.9f},{-46.2f,-1.1f},
+    {-46.8f,-3.0f},{-48.3f,-5.2f},{-47.7f,-5.8f},{-46.6f,-8.5f},{-46.1f,-10.5f},{-46.3f,-12.5f},
+    {-50.2f,-13.4f},{-50.5f,-11.0f},{-50.2f,-9.2f},{-52.0f,-9.0f},{-55.0f,-7.5f},{-58.0f,-8.8f},
+    {-60.0f,-10.0f},{-60.5f,-13.5f},{-62.5f,-13.0f},{-65.3f,-9.8f},{-67.5f,-10.3f},
+    {-70.5f,-11.0f},{-72.5f,-9.5f}
+};
+static const float geoNordeste[][2] = {
+    {-46.2f,-1.1f},{-46.8f,-3.0f},{-48.3f,-5.2f},{-47.7f,-5.8f},{-46.6f,-8.5f},{-46.1f,-10.5f},
+    {-46.3f,-12.5f},{-46.0f,-14.0f},{-44.2f,-15.5f},{-43.5f,-16.5f},{-41.8f,-17.9f},{-39.7f,-18.3f},
+    {-39.2f,-16.5f},{-38.9f,-15.0f},{-38.5f,-13.0f},{-37.3f,-11.0f},{-35.8f,-9.8f},{-35.2f,-8.5f},
+    {-34.85f,-7.2f},{-34.9f,-6.0f},{-35.3f,-5.2f},{-36.5f,-5.1f},{-37.2f,-4.8f},{-38.5f,-3.7f},
+    {-40.0f,-2.9f},{-41.5f,-2.9f},{-42.8f,-2.7f},{-44.0f,-2.5f},{-44.8f,-1.6f}
+};
+static const float geoCentro[][2] = {
+    {-60.5f,-13.5f},{-60.0f,-10.0f},{-58.0f,-8.8f},{-55.0f,-7.5f},{-52.0f,-9.0f},{-50.2f,-9.2f},
+    {-50.5f,-11.0f},{-50.2f,-13.4f},{-46.3f,-12.5f},{-46.0f,-14.0f},{-46.8f,-16.0f},{-47.2f,-17.0f},
+    {-48.2f,-18.3f},{-50.0f,-19.4f},{-51.0f,-20.2f},{-51.9f,-21.2f},{-52.9f,-22.4f},{-53.1f,-22.7f},
+    {-54.6f,-24.0f},{-55.4f,-23.7f},{-55.8f,-22.2f},{-57.9f,-22.0f},{-57.7f,-20.0f},{-58.2f,-17.8f},
+    {-60.2f,-16.3f},{-60.2f,-15.0f}
+};
+static const float geoSudeste[][2] = {
+    {-46.0f,-14.0f},{-44.2f,-15.5f},{-43.5f,-16.5f},{-41.8f,-17.9f},{-39.7f,-18.3f},{-39.8f,-19.8f},
+    {-40.9f,-21.0f},{-41.0f,-22.0f},{-42.0f,-22.9f},{-44.0f,-23.0f},{-45.4f,-23.8f},{-47.0f,-24.8f},
+    {-48.1f,-25.0f},{-49.5f,-24.2f},{-51.5f,-22.9f},{-53.1f,-22.7f},{-52.9f,-22.4f},{-51.9f,-21.2f},
+    {-51.0f,-20.2f},{-50.0f,-19.4f},{-48.2f,-18.3f},{-47.2f,-17.0f},{-46.8f,-16.0f}
+};
+static const float geoSul[][2] = {
+    {-48.1f,-25.0f},{-49.5f,-24.2f},{-51.5f,-22.9f},{-53.1f,-22.7f},{-54.6f,-24.0f},{-54.6f,-25.5f},
+    {-53.8f,-26.2f},{-54.2f,-27.3f},{-56.0f,-28.5f},{-57.6f,-30.2f},{-56.0f,-30.6f},{-54.6f,-31.5f},
+    {-53.6f,-32.9f},{-53.4f,-33.7f},{-52.2f,-32.2f},{-50.8f,-30.5f},{-49.7f,-29.0f},{-48.8f,-27.8f},
+    {-48.6f,-26.3f}
+};
+
+/*=============== Continuar aqui Estado global e renovacao as Utilizades ===============*/
+//
+//
+
+/* ---------------- Utilidades ---------------- */
 static const char *NomeEvento(TipoEvento evento)
 {
     switch (evento) {
