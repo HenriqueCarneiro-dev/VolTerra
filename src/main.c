@@ -379,112 +379,234 @@ static void atualizarMultiplicadores(void)
     }
 }
 
-/* -------  Ajustar MINIGAMES AQUI:  ------- */
+/* ---------------- Minigames ---------------- */
 
+static Vector2 noEsq(int i) { return (Vector2){435, 300 + i * 65}; }
+static Vector2 noDir(int i) { return (Vector2){845, 300 + i * 65}; }
 
-/* ---------------- Minigame dos fios ---------------- */
+static void iniciarMinigame(int id, TipoMini tipo){
+    mini.tipo = tipo;
+    mini.reg = id;
+    mini.arrasta = -1;
+    mini.tempo = (tipo == MINI_BLACKOUT) ? 15.0f : 14.0f;
 
-static Vector2 NoEsq(int i) { return (Vector2){430.0f, 280.0f + i * 80.0f}; }
-static Vector2 NoDir(int j) { return (Vector2){850.0f, 280.0f + j * 80.0f}; }
-
-static void MinigameIniciar(Minigame *m, int regiao)
-{
-    for (int i = 0; i < 4; i++) {
-        m->ordem[i] = i;
-        m->ligado[i] = false;
-        m->ligadoPara[i] = -1;
+    for(int i=0; i<4; i++){
+        mini.ordem[i] = i;
+        mini.ligados[i] = false;
+        mini.destino[i] = -1;
+        //Divide por 10 para transformar o inteiro 0..300 em decimal 0.0..30.0.
+        mini.calor[i] = 30.0f + GetRandomValue(0, 300) / 10.0f;
+        mini.taxa[i] = 5.0f + GetRandomValue(0, 60) / 10.0f + false * 0.6f;
     }
-
     for (int i = 3; i > 0; i--) {
         int k = GetRandomValue(0, i);
-        int tmp = m->ordem[i];
-        m->ordem[i] = m->ordem[k];
-        m->ordem[k] = tmp;
+        int t = mini.ordem[i];
+        mini.ordem[i] = mini.ordem[k];
+        mini.ordem[k] = t;
     }
 
-    m->arrastando = -1;
-    m->tempo = TEMPO_MINIGAME;
-    m->regiao = regiao;
+    estado = MINI;
 }
 
-// Retorna 1 = venceu, -1 = perdeu, 0 = em andamento.
-static int MinigameAtualizar(Minigame *m, float dt)
+static void resolverMinigame(bool sucesso){
+    Regiao *g = &r[mini.reg];
+    g->inBlack = false; g->inSobre = false;
+    g->tBlack = 0; g->tSobre = 0;
+
+    if(sucesso){
+        if(mini.tipo == MINI_BLACKOUT) g->bat = 62.0f;
+        else {g->bat = 76.0f; g->ajuste = 0.85f;}
+        pontos += 150;
+        mensagem("Crise Resolvida! +150 pontos", 4.0f);
+        estado = JOGO;
+    } else {
+        vidas--;
+        g->bat = (mini.tipo == MINI_BLACKOUT) ? 58.0f : 76.0f;
+        if(vidas <=0) { fimDePartida(false); return; }
+        mensagem("Falhou ! Voce perdeu uma vida da rede.", 4.0f);
+        estado = JOGO;
+    }
+}
+
+static void atualizarMinigame(float dt)
 {
     Vector2 mouse = GetMousePosition();
-    m->tempo -= dt;
+    mini.tempo -= dt;
 
-    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+    if (mini.tipo == MINI_BLACKOUT) {
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+            for (int i = 0; i < 4; i++)
+                if (!mini.ligados[i] && CheckCollisionPointCircle(mouse, noEsq(i), 22)) mini.arrasta = i;
+        }
+        if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON) && mini.arrasta >= 0) {
+            int i = mini.arrasta;
+            for (int j = 0; j < 4; j++) {
+                if (CheckCollisionPointCircle(mouse, noDir(j), 26) && mini.ordem[j] == i) {
+                    mini.ligados[i] = true;
+                    mini.destino[i] = j;
+                }
+            }
+            mini.arrasta = -1;
+        }
+        bool pronto = true;
+        for (int i = 0; i < 4; i++) if (!mini.ligados[i]) pronto = false;
+        if (pronto) resolverMinigame(true);
+        else if (mini.tempo <= 0) resolverMinigame(false);
+    } else {
+        bool falhou = false;
         for (int i = 0; i < 4; i++) {
-            if (!m->ligado[i] && CheckCollisionPointCircle(mouse, NoEsq(i), 24.0f)) {
-                m->arrastando = i;
+            mini.calor[i] += mini.taxa[i] * dt;
+            Rectangle rc = {380.0f + i * 140.0f, 270, 100, 200};
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mouse, rc)) {
+                mini.calor[i] -= 24.0f;
+                if (mini.calor[i] < 0) mini.calor[i] = 0;
             }
+            if (mini.calor[i] >= 100.0f) falhou = true;
         }
+        if (falhou) resolverMinigame(false);
+        else if (mini.tempo <= 0) resolverMinigame(true);
     }
-
-    if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON) && m->arrastando >= 0) {
-        int i = m->arrastando;
-
-        for (int j = 0; j < 4; j++) {
-            if (CheckCollisionPointCircle(mouse, NoDir(j), 28.0f) && m->ordem[j] == i) {
-                m->ligado[i] = true;
-                m->ligadoPara[i] = j;
-            }
-        }
-
-        m->arrastando = -1;
-    }
-
-    bool todos = true;
-    for (int i = 0; i < 4; i++) {
-        if (!m->ligado[i]) todos = false;
-    }
-
-    if (todos) return 1;
-    if (m->tempo <= 0.0f) return -1;
-    return 0;
 }
 
-static void MinigameDesenhar(const Minigame *m, const char *nomeRegiao)
-{
-    char texto[100];
+/*--------------- Logica do Jogo ---------------*/
+
+//Roda quando o dia de 30 segundos termina. Ela avalia o dia, dá pontos e avança dia e fase
+static void fimDoDia(void){
+    bool ok = true;
+    for (int i=0; i<N; i++){
+        if(!r[i].ativa) continue;
+        if(r[i].bat < LIM_BAIXO || r[i].bat > LIM_ALTO || r[i].inBlack || r[i].inSobre) ok = false;
+    }
+
+    if (ok){
+        streak++; // +sequencia dias bons seguidos//
+        int s = streak > 10 ? 10: streak;
+        int ganho = (int)((300 * fase + 100 * totalAtivas()) *(10 + s)/10.0f);
+        pontos += ganho;
+        char buf[120];
+        snprintf(buf, sizeof(buf), "Dia equilibrado! +%d pontos (sequencia x%d)", ganho, streak); // aqui feito para nao estourar o tamanho //
+        mensagem(buf, 4.0f); // 4Seg
+    } else {
+        streak = 0;
+        mensagem("Dia fora da faixa segura: sem bonus, sequencia zerada.", 4.0f);
+    }
+
+    // reinicia o relogio do dia e avanca +1 dia //
+    tempoDia = 0;
+    dia++;
+    if (dia > DIAS){
+        dia = 1;
+        fase++;
+        //caso o jog venca -> fimDePartida -> return para impedir de continuar //
+        if (fase > FASES) { fimDePartida(true); return; }
+        ativarFase();
+        char buf[120];
+        snprintf(buf, sizeof(buf), "FASE %d: eventos mais fortes e mais frequentes!", fase);
+        mensagem(buf, 5.0f);
+    }
+}
+
+// roda todo frame durante jogo -> dt = tempo em Seg //
+static void atualizarJogo(float dt){
     Vector2 mouse = GetMousePosition();
 
-    DrawRectangle(0, 0, LARGURA, ALTURA, Fade(BLACK, 0.75f));
-    DrawRectangle(330, 150, 620, 430, (Color){22, 28, 52, 255});
-    DrawRectangleLines(330, 150, 620, 430, YELLOW);
+    if (IsKeyPressed(KEY_P)) pausa = !pausa;
+    if (pausa) return;
 
-    snprintf(texto, sizeof(texto), "A REDE DO(A) %s CAIU!", nomeRegiao);
-    DrawTextCentro(texto, 640, 168, 26, RED);
-    DrawTextCentro("Arraste cada fio ate a ponta da mesma cor", 640, 204, 18, WHITE);
+    // 3 relogios:  tempo total do jogo; tempo restante mensagem tela; tempo restante do recarregamento de apio // 
+    tempoTotal += dt;
+    if (msgT > 0) msgT -= dt;
+    if (cooldown > 0) cooldown -= dt;
 
-    float p = m->tempo / TEMPO_MINIGAME;
-    if (p < 0.0f) p = 0.0f;
-    DrawRectangle(380, 240, 520, 10, (Color){40, 45, 70, 255});
-    DrawRectangle(380, 240, (int)(520 * p), 10, p > 0.3f ? (Color){80, 220, 150, 255} : RED);
+    // Selecao: botao esquerdo = ORIGEM, direito = DESTINO //
+    for (int i = 0; i < N; i++) {
+        if (!r[i].ativa || !dentro(mouse, r[i].pt, r[i].n)) continue;
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) origem = i;
+        if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) destino = i;
+    }
+    if (IsKeyPressed(KEY_TAB)) { int t = origem; origem = destino; destino = t; }
 
-    for (int i = 0; i < 4; i++) {
-        if (m->ligado[i]) {
-            DrawLineEx(NoEsq(i), NoDir(m->ligadoPara[i]), 9.0f, coresFio[i]);
+    // Producao da regiao de origem //
+    if (IsKeyDown(KEY_UP) || IsKeyDown(KEY_W)) r[origem].ajuste += dt * 0.8f;
+    if (IsKeyDown(KEY_DOWN) || IsKeyDown(KEY_S)) r[origem].ajuste -= dt * 0.8f;
+    if (IsKeyPressed(KEY_R)) r[origem].ajuste = 1.0f;
+    if (r[origem].ajuste < 0.3f) r[origem].ajuste = 0.3f;
+    if (r[origem].ajuste > 1.7f) r[origem].ajuste = 1.7f;
+
+    // Enviar apoio //
+    if (IsKeyPressed(KEY_E)) {
+        if (origem == destino) mensagem("Escolha um destino diferente (botao direito).", 3.0f);
+        else if (cooldown > 0) mensagem("Linha de transmissao carregando...", 2.0f);
+        else if (r[origem].bat < 20.0f) mensagem("Origem sem energia suficiente!", 3.0f);
+        else {
+            r[origem].bat -= 10.0f;
+            r[destino].bat += 8.0f;
+            cooldown = 1.2f;
+            char buf[120];
+            snprintf(buf, sizeof(buf), "Apoio: %s -> %s", r[origem].nome, r[destino].nome);
+            mensagem(buf, 2.5f);
         }
     }
 
-    if (m->arrastando >= 0) {
-        DrawLineEx(NoEsq(m->arrastando), mouse, 9.0f, coresFio[m->arrastando]);
+    // Eventos  - remove eventos expirados//
+    for (int e = 0; e < nev; e++) evs[e].t -= dt;
+    for (int e = 0; e < nev;) {
+        if (evs[e].t <= 0) {
+            for (int k = e; k < nev - 1; k++) evs[k] = evs[k + 1];
+            nev--;
+        } else e++;
     }
+    //-------------------------------------------//
 
-    for (int i = 0; i < 4; i++) {
-        Vector2 e = NoEsq(i);
-        Vector2 d = NoDir(i);
-
-        DrawRectangle(e.x - 44, e.y - 18, 40, 36, GRAY);
-        DrawCircleV(e, 15.0f, coresFio[i]);
-
-        DrawRectangle(d.x + 4, d.y - 18, 40, 36, GRAY);
-        DrawCircleV(d, 15.0f, coresFio[m->ordem[i]]);
+    //contagem regressiva para prox evento, quando zera cira um evento (max 5)
+    spawnT -= dt;
+    if (spawnT <= 0) {
+        if (nev < MAX_EV) spawnEvento();
+        else spawnT = 3.0f;
     }
+    atualizarMultiplicadores();
+
+    // Baterias, alertas e pontos por segundo //
+    for (int i = 0; i < N; i++) {
+        Regiao *g = &r[i];
+        if (!g->ativa) continue;
+
+        // saldo é producao menos consumo. saldo+ carrega bateria e - descarrega//
+        float saldo = g->ajuste * g->multProd - g->consBase * g->multCons;
+        g->bat += saldo * 4.0f * dt;
+        if (g->bat < 0) g->bat = 0;
+        if (g->bat > 105) g->bat = 105;
+
+        //O alerta de blackout liga abaixo de 50%, mas só desliga quando passa de 53%
+        if (!g->inBlack && g->bat < LIM_BAIXO) { g->inBlack = true; g->tBlack = 0; }
+        else if (g->inBlack && g->bat >= LIM_BAIXO + 3) g->inBlack = false;
+
+        if (!g->inSobre && g->bat > LIM_ALTO) { g->inSobre = true; g->tSobre = 0; }
+        else if (g->inSobre && g->bat <= LIM_ALTO - 3) g->inSobre = false;
+
+        if (g->bat >= LIM_BAIXO && g->bat <= LIM_ALTO) pontosAcum += fase * dt;
+
+        //Com o alerta ligado, conta o tempo. Ao chegar em 10s (TEMPO_ALERTA), abre o minigame e dá return//
+        if (g->inBlack) {
+            g->tBlack += dt;
+            if (g->tBlack >= TEMPO_ALERTA) { iniciarMinigame(i, MINI_BLACKOUT); return; }
+        }
+        if (g->inSobre) {
+            g->tSobre += dt;
+            if (g->tSobre >= TEMPO_ALERTA) { iniciarMinigame(i, MINI_SOBRECARGA); return; }
+        }
+    }
+    if (pontosAcum >= 1.0f) { pontos += (int)pontosAcum; pontosAcum -= (int)pontosAcum; }
+
+    tempoDia += dt;
+    if (tempoDia >= DIA_SEG) fimDoDia();
 }
 
-/* ---------------- Desenho do mundo ---------------- */
+
+// Continuar Aqui: (refinamento desenho mundo) //
+//
+
+/* ------------- Desenho ------------- */
 
 static void DesenharMundo(const Jogo *j, EstadoJogo estado, float tempo, Vector2 mouse)
 {
