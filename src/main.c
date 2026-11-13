@@ -235,9 +235,7 @@ static int regioesNaFase(int f) { return f <= 1 ? 3 : (f == 2 ? 4 : 5); }
 static int totalAtivas(void)
 {
     int c = 0;
-    for (int i = 0; i < N; i++)
-        if (r[i].ativa) c++;
-
+    for (int i = 0; i < N; i++) if (r[i].ativa) c++;
     return c;
 }
 
@@ -332,7 +330,8 @@ static void iniciarPartida(void)
 
 /* ---------- Eventos --------------*/
 
-static bool eventoAfeta(int id){
+static bool eventoAfeta(int id)
+{
     for (int i=0; i<N; i++){
         if(!r[i].ativa) continue;
         if (fabsf(evDefs[id].prod[i]) > 0.05f || fabsf(evDefs[id].cons[i]) > 0.05f) return True;
@@ -470,7 +469,6 @@ static void atualizarMinigame(float dt)
 
 /*--------------- Logica do Jogo ---------------*/
 
-//Roda quando o dia de 30 segundos termina. Ela avalia o dia, dá pontos e avança dia e fase
 static void fimDoDia(void){
     bool ok = true;
     for (int i=0; i<N; i++){
@@ -556,9 +554,6 @@ static void atualizarJogo(float dt){
             nev--;
         } else e++;
     }
-    //-------------------------------------------//
-
-    //contagem regressiva para prox evento, quando zera cira um evento (max 5)
     spawnT -= dt;
     if (spawnT <= 0) {
         if (nev < MAX_EV) spawnEvento();
@@ -608,478 +603,252 @@ static void atualizarJogo(float dt){
 
 /* ------------- Desenho ------------- */
 
-static void DesenharMundo(const Jogo *j, EstadoJogo estado, float tempo, Vector2 mouse)
+static void desenharMapa(void)
 {
-    // Mar
-    DrawRectangleGradientV(0, 0, LARGURA, 625, (Color){8, 22, 50, 255}, (Color){16, 58, 98, 255});
-
-    for (int i = 0; i < 55; i++) {
-        int x = (i * 197) % LARGURA;
-        int y = (i * 91) % 600;
-        float brilho = 0.15f + 0.35f * fabsf(sinf(tempo + i));
-        DrawPixel(x, y, Fade(WHITE, brilho));
+    for (int i = 0; i < N; i++) {
+        Color base = r[i].ativa ? r[i].cor : (Color){50, 58, 70, 255};
+        preencher(r[i].pt, r[i].n, base);
+        if (r[i].ativa && r[i].inBlack) {
+            float p = 0.25f + 0.2f * sinf(tempoTotal * 9.0f);
+            preencher(r[i].pt, r[i].n, Fade(RED, p));
+        } else if (r[i].ativa && r[i].inSobre) {
+            float p = 0.25f + 0.2f * sinf(tempoTotal * 9.0f);
+            preencher(r[i].pt, r[i].n, Fade(ORANGE, p));
+        }
+    }
+    for (int i = 0; i < N; i++) {
+        for (int k = 0; k < r[i].n; k++)
+            DrawLineEx(r[i].pt[k], r[i].pt[(k + 1) % r[i].n], 2.0f, (Color){15, 25, 40, 255});
     }
 
-    // Titulo
-    DrawText("VOLTERRA", 28, 17, 38, (Color){255, 220, 80, 255});
-    DrawText("A crise das cinco noites", 30, 57, 18, LIGHTGRAY);
-
-    // Pontos (centro)
-    char buf[128];
-    snprintf(buf, sizeof(buf), "PONTOS  %d", (int)(j->pontosExibidos + 0.5f));
-    DrawTextCentro(buf, 640, 10, 30, (Color){255, 220, 80, 255});
-
-    int s = (j->sequencia > 6) ? 6 : j->sequencia;
-    snprintf(buf, sizeof(buf), "Sequencia: %d dia(s)  |  multiplicador x%.1f",
-             j->sequencia, (9 + s) / 10.0f);
-    DrawTextCentro(buf, 640, 44, 15, LIGHTGRAY);
-
-    // Fase, dia e tempo (direita)
-    snprintf(buf, sizeof(buf), "FASE %d / %d", j->fase, TOTAL_FASES);
-    DrawText(buf, 1010, 12, 26, YELLOW);
-
-    float restante = TOTAL_FASES * DURACAO_FASE - ((j->fase - 1) * DURACAO_FASE + j->tempoFase);
-    if (restante < 0.0f) restante = 0.0f;
-    snprintf(buf, sizeof(buf), "Dia %d/%d   |   restam %d:%02d",
-             j->dia, DIAS_POR_FASE, (int)restante / 60, (int)restante % 60);
-    DrawText(buf, 1010, 44, 16, LIGHTGRAY);
-
-    float pd = j->tempoDia / DURACAO_DIA;
-    if (pd > 1.0f) pd = 1.0f;
-    DrawRectangle(1010, 68, 230, 8, (Color){40, 45, 70, 255});
-    DrawRectangle(1010, 68, (int)(230 * pd), 8, YELLOW);
-
-    // Regioes (a selecionada por ultimo, para o contorno ficar por cima)
-    for (int passo = 0; passo < 2; passo++) {
-        for (int i = 0; i < NUM_REGIOES; i++) {
-            if ((i == j->selecionada) != (passo == 1)) continue;
-
-            const Regiao *r = &j->regioes[i];
-            Color cor = r->cor;
-
-            if (!r->ativa) cor = (Color){62, 68, 84, 255};
-            else if (estado == ESTADO_JOGO && PontoNoPoligono(mouse, r->pontos, r->numPontos)) {
-                cor = ColorBrightness(cor, 0.15f);
-            }
-
-            PreencherPoligono(r->pontos, r->numPontos, Fade(BLACK, 0.45f), 7.0f, 9.0f);
-            PreencherPoligono(r->pontos, r->numPontos, cor, 0.0f, 0.0f);
-
-            if (r->emBlackout) {
-                float pulso = 0.25f + 0.2f * sinf(tempo * 8.0f);
-                PreencherPoligono(r->pontos, r->numPontos, Fade(RED, pulso), 0.0f, 0.0f);
-            }
-
-            DesenharContorno(r->pontos, r->numPontos,
-                             i == j->selecionada ? 5.0f : 2.0f,
-                             i == j->selecionada ? WHITE : (Color){15, 18, 30, 255});
+    /* Linha de apoio */
+    if (origem != destino && r[origem].ativa && r[destino].ativa) {
+        Vector2 a = r[origem].c, b = r[destino].c;
+        DrawLineEx(a, b, 2.0f, Fade(YELLOW, 0.5f));
+        for (int k = 0; k < 4; k++) {
+            float t = fmodf(tempoTotal * 0.8f + k * 0.25f, 1.0f);
+            DrawCircleV((Vector2){a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t}, 4, YELLOW);
         }
     }
 
-    // Icones e textos das regioes
-    for (int i = 0; i < NUM_REGIOES; i++) {
-        const Regiao *r = &j->regioes[i];
+    for (int i = 0; i < N; i++) {
+        Regiao *g = &r[i];
+        int cx = (int)g->c.x, cy = (int)g->c.y;
 
-        if (r->ativa) {
-            DesenharIconeFonte(r->fonte, r->centro, tempo);
-            DrawTextCentro(r->nome, (int)r->centro.x, (int)r->centro.y + 30, 17, WHITE);
-
-            snprintf(buf, sizeof(buf), "%.0f%%", r->bateria);
-            DrawTextCentro(buf, (int)r->centro.x, (int)r->centro.y + 49, 17, CorBateria(r->bateria));
-
-            if (r->emBlackout) {
-                snprintf(buf, sizeof(buf), "BLACKOUT %.0f", r->blackoutTempo < 0 ? 0 : r->blackoutTempo + 0.99f);
-                DrawTextCentro(buf, (int)r->centro.x, (int)r->centro.y - 52, 22, WHITE);
-            }
-        } else {
-            DrawTextCentro(r->nome, (int)r->centro.x, (int)r->centro.y - 8, 17, LIGHTGRAY);
-            snprintf(buf, sizeof(buf), "libera na fase %d", FaseLiberacao(i));
-            DrawTextCentro(buf, (int)r->centro.x, (int)r->centro.y + 14, 14, GRAY);
+        if (!g->ativa) {
+            textoCentro(g->nome, cx, cy - 14, 14, GRAY);
+            textoCentro("BLOQUEADA", cx, cy + 4, 12, GRAY);
+            continue;
         }
-    }
 
-    // Linha de energia
-    if (j->linhaTempo > 0.0f && j->origem >= 0 && j->destino >= 0) {
-        Vector2 a = j->regioes[j->origem].centro;
-        Vector2 b = j->regioes[j->destino].centro;
+        icone(g->fonte, g->c.x, g->c.y - 18, tempoTotal);
+        textoCentro(g->nome, cx, cy + 12, 14, WHITE);
+        textoCentro(TextFormat("%.0f%%", g->bat), cx, cy + 28, 18, corBat(g->bat));
 
-        DrawLineEx(a, b, 4.0f, Fade(YELLOW, j->linhaTempo));
-        for (int i = 0; i < 4; i++) {
-            float p = fmodf(tempo * 1.5f + i * 0.25f, 1.0f);
-            Vector2 pos = {a.x + (b.x - a.x) * p, a.y + (b.y - a.y) * p};
-            DrawCircleV(pos, 6.0f, Fade(WHITE, j->linhaTempo));
+        if (i == origem) {
+            DrawCircleLines(cx, cy, 52 + (int)(2 * sinf(tempoTotal * 6)), YELLOW);
+            textoCentro("ORIGEM", cx, cy - 66, 14, YELLOW);
         }
-    }
-
-    // Painel inferior
-    DrawRectangle(0, 625, LARGURA, 95, (Color){20, 26, 50, 255});
-    DrawLine(0, 625, LARGURA, 625, (Color){255, 220, 80, 255});
-    DrawText("ENERGIA DAS REGIOES", 28, 637, 17, YELLOW);
-
-    for (int i = 0; i < NUM_REGIOES; i++) {
-        const Regiao *r = &j->regioes[i];
-        int x = 28 + i * 245;
-
-        DrawText(r->nome, x, 660, 15, r->ativa ? WHITE : GRAY);
-        DesenharBarraBateria(x, 682, 190, 16, r->bateria, r->limiteBlackout, r->ativa);
-
-        if (r->ativa) {
-            snprintf(buf, sizeof(buf), "limite %.0f%%", r->limiteBlackout);
-            DrawText(buf, x + 194, 681, 13, LIGHTGRAY);
-        } else {
-            DrawText("bloqueada", x + 194, 681, 13, GRAY);
+        if (i == destino && destino != origem) {
+            DrawCircleLines(cx, cy, 52, SKYBLUE);
+            textoCentro("DESTINO", cx, cy - 66, 14, SKYBLUE);
         }
-    }
-
-    // Controles
-    DrawRectangle(20, 94, 265, 112, Fade((Color){15, 20, 38, 255}, 0.92f));
-    DrawRectangleLines(20, 94, 265, 112, (Color){100, 120, 160, 255});
-    DrawText("CONTROLES", 34, 103, 17, YELLOW);
-    DrawText("WASD / clique: selecionar", 34, 127, 15, WHITE);
-    DrawText("E: transferir energia", 34, 147, 15, WHITE);
-    DrawText("ESPACO: economizar energia", 34, 167, 15, WHITE);
-    DrawText("Blackout: 10 s ou minigame!", 34, 187, 14, ORANGE);
-
-    // Evento
-    DrawRectangle(965, 95, 285, 70, Fade((Color){15, 20, 38, 255}, 0.92f));
-    DrawRectangleLines(965, 95, 285, 70, (Color){100, 120, 160, 255});
-    DrawText("EVENTO DO DIA", 980, 105, 16, YELLOW);
-    DrawText(NomeEvento(j->evento), 980, 130, 20, WHITE);
-
-    // Regiao selecionada
-    const Regiao *sel = &j->regioes[j->selecionada];
-    DrawRectangle(965, 180, 285, 125, Fade((Color){15, 20, 38, 255}, 0.92f));
-    DrawRectangleLines(965, 180, 285, 125, (Color){100, 120, 160, 255});
-
-    DrawText(sel->nome, 980, 189, 21, WHITE);
-    DrawText(sel->fonteNome, 980, 215, 16, LIGHTGRAY);
-
-    snprintf(buf, sizeof(buf), "%s | blackout < %.0f%%",
-             sel->cidadeGrande ? "Cidade grande" : "Cidade pequena", sel->limiteBlackout);
-    DrawText(buf, 980, 238, 14, YELLOW);
-
-    float saldo = (sel->producao - sel->consumo * (sel->economiaTempo > 0.0f ? FATOR_ECONOMIA : 1.0f))
-                  * FATOR_SIMULACAO;
-    snprintf(buf, sizeof(buf), "Saldo: %+.1f%% por segundo", saldo);
-    DrawText(buf, 980, 258, 15, saldo >= 0.0f ? (Color){80, 220, 150, 255} : RED);
-
-    if (sel->economiaTempo > 0.0f) snprintf(buf, sizeof(buf), "Economia ativa: %.0f s", sel->economiaTempo);
-    else if (sel->recarga > 0.0f)  snprintf(buf, sizeof(buf), "Economia em recarga: %.0f s", sel->recarga);
-    else                           snprintf(buf, sizeof(buf), "Economia pronta (ESPACO)");
-    DrawText(buf, 980, 280, 14, LIGHTGRAY);
-
-    // Mensagem
-    if (j->mensagemTempo > 0.0f && estado != ESTADO_MENU && estado != ESTADO_FIM) {
-        int w = MeasureText(j->mensagem, 18);
-        DrawRectangle(640 - w / 2 - 16, 68, w + 32, 28, Fade((Color){8, 12, 24, 255}, 0.9f));
-        DrawText(j->mensagem, 640 - w / 2, 73, 18, WHITE);
+        if (g->inBlack)
+            textoCentro(TextFormat("BLACKOUT %.1fs", TEMPO_ALERTA - g->tBlack), cx, cy - 48, 15, RED);
+        if (g->inSobre)
+            textoCentro(TextFormat("SOBRECARGA %.1fs", TEMPO_ALERTA - g->tSobre), cx, cy - 48, 15, ORANGE);
     }
 }
+
+static void listaAfetados(int id, char *fav, char *pre, size_t sz)
+{
+    fav[0] = 0; pre[0] = 0;
+    for (int i = 0; i < N; i++) {
+        if (!r[i].ativa) continue;
+        float s = evDefs[id].prod[i] - evDefs[id].cons[i];
+        char *alvo = (s > 0.03f) ? fav : ((s < -0.03f) ? pre : NULL);
+        if (!alvo) continue;
+        if (alvo[0]) strncat(alvo, ", ", sz - strlen(alvo) - 1);
+        strncat(alvo, abrev[i], sz - strlen(alvo) - 1);
+    }
+}
+
+static void desenharEventos(void)
+{
+    DrawRectangle(10, 100, 265, 430, Fade((Color){20, 30, 50, 255}, 0.92f));
+    DrawRectangleLines(10, 100, 265, 430, (Color){70, 90, 120, 255});
+    DrawText("EVENTOS ATIVOS", 22, 110, 17, YELLOW);
+    if (nev == 0) DrawText("Nenhum no momento", 22, 142, 14, LIGHTGRAY);
+
+    for (int e = 0; e < nev; e++) {
+        int y = 138 + e * 78;
+        char fav[100], pre[100];
+        listaAfetados(evs[e].id, fav, pre, sizeof(fav));
+        DrawText(evDefs[evs[e].id].nome, 22, y, 16, WHITE);
+        DrawRectangle(22, y + 20, 235, 6, (Color){45, 55, 75, 255});
+        DrawRectangle(22, y + 20, (int)(235 * evs[e].t / evs[e].dur), 6, SKYBLUE);
+        DrawText(TextFormat("Favorece: %s", fav[0] ? fav : "-"), 22, y + 32, 12, (Color){110, 230, 150, 255});
+        DrawText(TextFormat("Prejudica: %s", pre[0] ? pre : "-"), 22, y + 48, 12, (Color){255, 120, 110, 255});
+    }
+
+    DrawText("CONTROLES", 22, 548, 16, YELLOW);
+    DrawText("Botao ESQ: escolher ORIGEM", 22, 572, 13, LIGHTGRAY);
+    DrawText("Botao DIR: escolher DESTINO", 22, 590, 13, LIGHTGRAY);
+    DrawText("E: enviar apoio  |  TAB: inverter", 22, 608, 13, LIGHTGRAY);
+    DrawText("W/S ou Setas: producao da origem", 22, 626, 13, LIGHTGRAY);
+    DrawText("R: producao normal  |  P: pausa", 22, 644, 13, LIGHTGRAY);
+}
+
+static void desenharPainel(void)
+{
+    DrawRectangle(930, 0, 350, H, (Color){22, 30, 48, 255});
+    DrawText(TextFormat("FASE %d/%d   DIA %d/%d", fase, FASES, dia, DIAS), 950, 18, 22, YELLOW);
+    DrawText(TextFormat("PONTOS: %d", pontos), 950, 50, 22, (Color){100, 240, 150, 255});
+    DrawText(TextFormat("Vidas da rede: %d", vidas), 950, 82, 17, vidas > 1 ? WHITE : RED);
+    DrawText(TextFormat("Sequencia: x%d", streak), 950, 106, 17, ORANGE);
+
+    DrawText("REGIOES", 950, 140, 16, LIGHTGRAY);
+    for (int i = 0; i < N; i++) {
+        Regiao *g = &r[i];
+        int y = 164 + i * 78;
+        Color nome = (i == origem) ? YELLOW : ((i == destino) ? SKYBLUE : WHITE);
+        if (!g->ativa) nome = GRAY;
+        DrawText(g->nome, 950, y, 16, nome);
+
+        if (!g->ativa) { DrawText("bloqueada", 1180, y, 14, GRAY); continue; }
+
+        DrawText(TextFormat("%.0f%%", g->bat), 1205, y, 16, corBat(g->bat));
+        DrawRectangle(950, y + 22, 300, 14, (Color){40, 48, 68, 255});
+        DrawRectangle(952, y + 24, (int)(296 * (g->bat > 100 ? 100 : g->bat) / 100.0f), 10, corBat(g->bat));
+        DrawLine(950 + 150, y + 19, 950 + 150, y + 40, (Color){255, 120, 120, 255});
+        DrawLine(950 + (int)(300 * LIM_ALTO / 100.0f), y + 19, 950 + (int)(300 * LIM_ALTO / 100.0f), y + 40,
+                 (Color){255, 200, 90, 255});
+
+        float prod = g->ajuste * g->multProd, cons = g->consBase * g->multCons;
+        float saldo = (prod - cons) * 4.0f;
+        DrawText(TextFormat("Prod %.0f%%", prod * 100), 950, y + 44, 13, SKYBLUE);
+        DrawText(TextFormat("Cons %.0f%%", cons * 100), 1040, y + 44, 13, LIGHTGRAY);
+        DrawText(TextFormat("%+.1f%%/s", saldo), 1140, y + 44, 14,
+                 saldo > 0.15f ? GREEN : (saldo < -0.15f ? RED : WHITE));
+    }
+
+    DrawText(TextFormat("Producao da origem: %.0f%%", r[origem].ajuste * 100), 950, 560, 16, SKYBLUE);
+    DrawText("Faixa segura: 50% a 85%", 950, 590, 15, (Color){110, 230, 150, 255});
+    DrawText("Abaixo: blackout | Acima: sobrecarga", 950, 612, 14, LIGHTGRAY);
+    DrawText(TextFormat("Apoio: %s", cooldown > 0 ? "carregando..." : "pronto (tecla E)"), 950, 640, 15,
+             cooldown > 0 ? ORANGE : GREEN);
+
+    /* Barra do dia e mensagem */
+    DrawRectangle(290, 82, 600, 8, (Color){40, 48, 68, 255});
+    DrawRectangle(290, 82, (int)(600 * tempoDia / DIA_SEG), 8, SKYBLUE);
+    DrawText("VOL TERRA  |  Rede Nacional de Energia", 20, 18, 22, RAYWHITE);
+    DrawText("Gerencie o Brasil sem apagao e sem sobrecarga", 20, 48, 14, LIGHTGRAY);
+
+    if (msgT > 0) {
+        DrawRectangle(290, 28, 600, 34, Fade(BLACK, 0.6f));
+        textoCentro(msg, 590, 36, 17, WHITE);
+    }
+    if (pausa) {
+        DrawRectangle(0, 0, W, H, Fade(BLACK, 0.6f));
+        textoCentro("PAUSADO - P para continuar", W / 2, H / 2 - 12, 30, WHITE);
+    }
+}
+
+static void desenharMinigame(void)
+{
+    DrawRectangle(0, 0, W, H, Fade(BLACK, 0.80f));
+    DrawRectangle(320, 150, 640, 420, (Color){25, 32, 53, 255});
+    DrawRectangleLines(320, 150, 640, 420, YELLOW);
+
+    if (mini.tipo == MINI_BLACKOUT) {
+        textoCentro(TextFormat("BLACKOUT: %s", r[mini.reg].nome), 640, 168, 26, RED);
+        textoCentro("Arraste cada fio ate a tomada da mesma cor", 640, 206, 17, WHITE);
+        DrawRectangle(380, 238, 520, 8, (Color){40, 48, 68, 255});
+        DrawRectangle(380, 238, (int)(520 * mini.tempo / 15.0f), 8, mini.tempo > 5 ? GREEN : RED);
+
+        for (int i = 0; i < 4; i++)
+            if (mini.ligados[i]) DrawLineEx(noEsq(i), noDir(mini.destino[i]), 8, fios[i]);
+        if (mini.arrasta >= 0) DrawLineEx(noEsq(mini.arrasta), GetMousePosition(), 8, fios[mini.arrasta]);
+
+        for (int i = 0; i < 4; i++) {
+            DrawCircleV(noEsq(i), 17, fios[i]);
+            DrawCircleV(noDir(i), 17, fios[mini.ordem[i]]);
+        }
+        textoCentro(TextFormat("Tempo: %.1f", mini.tempo), 640, 540, 20, WHITE);
+    } else {
+        textoCentro(TextFormat("SOBRECARGA: %s", r[mini.reg].nome), 640, 168, 26, ORANGE);
+        textoCentro("Clique nas turbinas para reduzir a producao antes que superaquecam!", 640, 206, 16, WHITE);
+        DrawRectangle(380, 238, 520, 8, (Color){40, 48, 68, 255});
+        DrawRectangle(380, 238, (int)(520 * mini.tempo / 14.0f), 8, SKYBLUE);
+
+        for (int i = 0; i < 4; i++) {
+            int x = 380 + i * 140;
+            float p = mini.calor[i] / 100.0f;
+            if (p > 1) p = 1;
+            DrawRectangle(x, 270, 100, 200, (Color){40, 48, 68, 255});
+            DrawRectangle(x, 470 - (int)(200 * p), 100, (int)(200 * p),
+                          p > 0.8f ? RED : (p > 0.55f ? ORANGE : GREEN));
+            DrawRectangleLines(x, 270, 100, 200, WHITE);
+            textoCentro(TextFormat("Turbina %d", i + 1), x + 50, 478, 15, WHITE);
+        }
+        textoCentro(TextFormat("Tempo restante: %.1f", mini.tempo), 640, 520, 20, LIGHTGRAY);
+    }
+}
+
 
 /* ---------------- Programa principal ---------------- */
 
 int main(void)
 {
-    InitWindow(LARGURA, ALTURA, "VolTerra - A crise das cinco noites");
+    InitWindow(W, H, "VolTerra - Gerenciamento de Energia");
     SetTargetFPS(60);
     SetRandomSeed((unsigned int)time(NULL));
-
-    Jogo jogo;
-    Minigame mini = {0};
-    int ranking[TAM_RANKING];
-    EstadoJogo estado = ESTADO_MENU;
-
-    CarregarRanking(ranking);
-    IniciarPartida(&jogo);
+    carregarRanking();
 
     while (!WindowShouldClose()) {
-        Jogo *j = &jogo;
         float dt = GetFrameTime();
-        if (dt > 0.05f) dt = 0.05f;
-        float tempo = (float)GetTime();
-        Vector2 mouse = GetMousePosition();
+        if (dt > 0.1f) dt = 0.1f;
 
-        /* ---------- Atualizacao ---------- */
-
-        if (estado == ESTADO_MENU) {
-            if (IsKeyPressed(KEY_ENTER)) {
-                IniciarPartida(j);
-                estado = ESTADO_JOGO;
-            }
-        }
-        else if (estado == ESTADO_FASE) {
-            if (IsKeyPressed(KEY_ENTER)) {
-                ConfigurarFase(j);
-                estado = ESTADO_JOGO;
-            }
-        }
-        else if (estado == ESTADO_FIM) {
-            if (IsKeyPressed(KEY_R)) {
-                IniciarPartida(j);
-                estado = ESTADO_JOGO;
-            }
-        }
-        else if (estado == ESTADO_MINIGAME) {
-            int res = MinigameAtualizar(&mini, dt);
-
-            if (res == 1) {
-                Regiao *r = &j->regioes[mini.regiao];
-                r->bateria = r->limiteBlackout + 25.0f;
-                if (r->bateria > 100.0f) r->bateria = 100.0f;
-                r->emBlackout = false;
-                r->blackoutTempo = 0.0f;
-                j->pontos += 50;
-
-                snprintf(j->mensagem, sizeof(j->mensagem),
-                         "Rede restaurada em %s! +50 pontos", r->nome);
-                j->mensagemTempo = 4.0f;
-                estado = ESTADO_JOGO;
-            }
-            else if (res == -1) {
-                snprintf(j->mensagem, sizeof(j->mensagem),
-                         "BLACKOUT! %s ficou no escuro e o Brasil apagou.",
-                         j->regioes[mini.regiao].nome);
-                j->vitoria = false;
-                j->posicaoRanking = InserirRanking(ranking, j->pontos);
-                estado = ESTADO_FIM;
-            }
-        }
-        else if (estado == ESTADO_JOGO) {
-            j->tempoDia += dt;
-            j->tempoFase += dt;
-
-            if (j->linhaTempo > 0.0f) j->linhaTempo -= dt;
-            if (j->mensagemTempo > 0.0f) j->mensagemTempo -= dt;
-
-            // Selecao por teclado: vai para a regiao ativa mais proxima na direcao.
-            Vector2 dir = {0.0f, 0.0f};
-            if (IsKeyPressed(KEY_W)) dir.y = -1.0f;
-            else if (IsKeyPressed(KEY_S)) dir.y = 1.0f;
-            else if (IsKeyPressed(KEY_A)) dir.x = -1.0f;
-            else if (IsKeyPressed(KEY_D)) dir.x = 1.0f;
-
-            if (dir.x != 0.0f || dir.y != 0.0f) {
-                int melhor = -1;
-                float melhorScore = 1e9f;
-                Vector2 o = j->regioes[j->selecionada].centro;
-
-                for (int i = 0; i < NUM_REGIOES; i++) {
-                    if (i == j->selecionada || !j->regioes[i].ativa) continue;
-
-                    float dx = j->regioes[i].centro.x - o.x;
-                    float dy = j->regioes[i].centro.y - o.y;
-                    float proj = dx * dir.x + dy * dir.y;
-                    if (proj <= 0.0f) continue;
-
-                    float dist2 = dx * dx + dy * dy;
-                    float score = dist2 / proj;
-
-                    if (score < melhorScore) {
-                        melhorScore = score;
-                        melhor = i;
-                    }
-                }
-
-                if (melhor >= 0) j->selecionada = melhor;
-            }
-
-            // Selecao por mouse
-            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-                for (int i = 0; i < NUM_REGIOES; i++) {
-                    if (j->regioes[i].ativa &&
-                        PontoNoPoligono(mouse, j->regioes[i].pontos, j->regioes[i].numPontos)) {
-                        j->selecionada = i;
-                    }
-                }
-            }
-
-            // E: transferencia (12% saem, 9% chegam)
-            if (IsKeyPressed(KEY_E)) {
-                int origem = -1;
-                float maior = -1.0f;
-
-                for (int i = 0; i < NUM_REGIOES; i++) {
-                    const Regiao *o = &j->regioes[i];
-                    if (i == j->selecionada || !o->ativa) continue;
-
-                    if (o->bateria - 12.0f >= o->limiteBlackout + 5.0f && o->bateria > maior) {
-                        maior = o->bateria;
-                        origem = i;
-                    }
-                }
-
-                if (origem >= 0) {
-                    Regiao *dest = &j->regioes[j->selecionada];
-
-                    j->regioes[origem].bateria -= 12.0f;
-                    dest->bateria += 9.0f;
-                    if (dest->bateria > 100.0f) dest->bateria = 100.0f;
-
-                    j->origem = origem;
-                    j->destino = j->selecionada;
-                    j->linhaTempo = 1.0f;
-
-                    snprintf(j->mensagem, sizeof(j->mensagem),
-                             "%s enviou 12%% para %s (9%% chegaram).",
-                             j->regioes[origem].nome, dest->nome);
-                } else {
-                    snprintf(j->mensagem, sizeof(j->mensagem),
-                             "Nenhuma regiao pode doar sem arriscar o proprio blackout.");
-                }
-                j->mensagemTempo = 3.0f;
-            }
-
-            // Espaco: economia emergencial
-            if (IsKeyPressed(KEY_SPACE)) {
-                Regiao *s2 = &j->regioes[j->selecionada];
-
-                if (s2->economiaTempo > 0.0f) {
-                    snprintf(j->mensagem, sizeof(j->mensagem), "A economia ja esta ativa.");
-                } else if (s2->recarga > 0.0f) {
-                    snprintf(j->mensagem, sizeof(j->mensagem),
-                             "Economia em recarga: %.0f s.", s2->recarga);
-                } else {
-                    s2->economiaTempo = 8.0f;
-                    s2->recarga = 20.0f;
-                    snprintf(j->mensagem, sizeof(j->mensagem),
-                             "Economia ativada em %s por 8 segundos!", s2->nome);
-                }
-                j->mensagemTempo = 3.0f;
-            }
-
-            // Baterias e contagem de blackout
-            int regiaoCaiu = -1;
-
-            for (int i = 0; i < NUM_REGIOES; i++) {
-                Regiao *r = &j->regioes[i];
-                if (!r->ativa) continue;
-
-                if (r->economiaTempo > 0.0f) r->economiaTempo -= dt;
-                if (r->recarga > 0.0f) r->recarga -= dt;
-
-                float consumoAtual = r->consumo;
-                if (r->economiaTempo > 0.0f) consumoAtual *= FATOR_ECONOMIA;
-
-                r->bateria += (r->producao - consumoAtual) * dt * FATOR_SIMULACAO;
-                if (r->bateria > 100.0f) r->bateria = 100.0f;
-                if (r->bateria < 0.0f) r->bateria = 0.0f;
-
-                if (r->bateria < r->limiteBlackout) {
-                    if (!r->emBlackout) {
-                        r->emBlackout = true;
-                        r->blackoutTempo = TEMPO_BLACKOUT;
-                        snprintf(j->mensagem, sizeof(j->mensagem),
-                                 "ALERTA: %s em blackout! Voce tem 10 segundos.", r->nome);
-                        j->mensagemTempo = 4.0f;
-                    } else {
-                        r->blackoutTempo -= dt;
-                        if (r->blackoutTempo <= 0.0f && regiaoCaiu < 0) regiaoCaiu = i;
-                    }
-                } else {
-                    r->emBlackout = false;
-                }
-            }
-
-            if (regiaoCaiu >= 0) {
-                MinigameIniciar(&mini, regiaoCaiu);
-                estado = ESTADO_MINIGAME;
-            }
-            else if (j->tempoDia >= DURACAO_DIA) {
-                EncerrarDia(j);
-                j->tempoDia = 0.0f;
-                j->dia++;
-
-                if (j->dia > DIAS_POR_FASE) {
-                    if (j->fase >= TOTAL_FASES) {
-                        j->pontos += 1000;
-                        j->vitoria = true;
-                        snprintf(j->mensagem, sizeof(j->mensagem),
-                                 "Voce manteve o Brasil aceso por 10 minutos!");
-                        j->posicaoRanking = InserirRanking(ranking, j->pontos);
-                        estado = ESTADO_FIM;
-                    } else {
-                        j->pontos += 300 * j->fase;
-                        j->fase++;
-                        estado = ESTADO_FASE;
-                    }
-                } else {
-                    SortearDia(j);
-                }
-            }
-        }
-
-        // Contador de pontos subindo
-        if (j->pontosExibidos < (float)j->pontos) {
-            float diff = (float)j->pontos - j->pontosExibidos;
-            float passo = diff * dt * 4.0f;
-            if (passo < 1.0f) passo = 1.0f;
-            if (passo > diff) passo = diff;
-            j->pontosExibidos += passo;
-        }
-
-        /* ---------- Desenho ---------- */
+        if (estado == MENU && IsKeyPressed(KEY_ENTER)) iniciarPartida();
+        else if (estado == JOGO) atualizarJogo(dt);
+        else if (estado == MINI) atualizarMinigame(dt);
+        else if (estado == FIM && IsKeyPressed(KEY_ENTER)) estado = MENU;
 
         BeginDrawing();
-        ClearBackground(BLACK);
+        DrawRectangleGradientV(0, 0, W, H, (Color){8, 24, 46, 255}, (Color){10, 45, 78, 255});
 
-        DesenharMundo(j, estado, tempo, mouse);
-
-        char buf[160];
-
-        if (estado == ESTADO_MINIGAME) {
-            MinigameDesenhar(&mini, j->regioes[mini.regiao].nome);
+        if (estado == MENU) {
+            textoCentro("VOL TERRA", W / 2, 90, 56, SKYBLUE);
+            textoCentro("Gerencie a energia do Brasil", W / 2, 160, 24, WHITE);
+            textoCentro("Mantenha cada regiao entre 50% e 85% de bateria", W / 2, 215, 21, GREEN);
+            textoCentro("Abaixo de 50%: blackout. Acima de 85%: sobrecarga.", W / 2, 248, 18, ORANGE);
+            textoCentro("Botao esquerdo = origem | Botao direito = destino | E = enviar apoio", W / 2, 295, 18, LIGHTGRAY);
+            textoCentro("W/S ajustam a producao da regiao de origem", W / 2, 322, 18, LIGHTGRAY);
+            textoCentro("Partida de 10 minutos: 5 fases, eventos cada vez mais fortes", W / 2, 349, 18, LIGHTGRAY);
+            textoCentro("ENTER para iniciar", W / 2, 410, 26, YELLOW);
+            textoCentro("RANKING", W / 2, 470, 20, YELLOW);
+            for (int i = 0; i < 5; i++)
+                textoCentro(TextFormat("%d.  %d pts", i + 1, ranking[i]), W / 2, 500 + i * 24, 18, WHITE);
+        } else if (estado == JOGO) {
+            desenharMapa();
+            desenharEventos();
+            desenharPainel();
+        } else if (estado == MINI) {
+            desenharMapa();
+            desenharPainel();
+            desenharMinigame();
+        } else {
+            textoCentro(vitoria ? "REDE ESTABILIZADA - VOCE VENCEU!" : "FIM DE JOGO", W / 2, 100, 42,
+                        vitoria ? GREEN : RED);
+            textoCentro(TextFormat("Pontuacao: %d", pontos), W / 2, 165, 28, WHITE);
+            if (posRanking > 0)
+                textoCentro(TextFormat("Voce ficou em %do lugar no ranking!", posRanking), W / 2, 205, 20, GREEN);
+            textoCentro("RANKING", W / 2, 250, 22, YELLOW);
+            for (int i = 0; i < 5; i++)
+                textoCentro(TextFormat("%d.  %d pts", i + 1, ranking[i]), W / 2, 290 + i * 30, 20,
+                            (posRanking == i + 1) ? GREEN : WHITE);
+            textoCentro("ENTER para voltar ao menu", W / 2, 500, 20, LIGHTGRAY);
         }
-        else if (estado == ESTADO_MENU) {
-            DrawRectangle(0, 0, LARGURA, ALTURA, Fade(BLACK, 0.80f));
-            DrawTextCentro("VOLTERRA", 640, 90, 80, (Color){255, 220, 80, 255});
-            DrawTextCentro("A crise das cinco noites", 640, 175, 24, LIGHTGRAY);
-
-            DrawTextCentro("5 fases de 2 minutos = 10 minutos de partida", 640, 235, 20, WHITE);
-            DrawTextCentro("Fase 1: 3 regioes   |   Fase 2: 4 regioes   |   Fases 3 a 5: 5 regioes", 640, 262, 18, LIGHTGRAY);
-            DrawTextCentro("Regiao abaixo do limite = 10 s para salvar, ou cai o minigame dos fios", 640, 288, 18, LIGHTGRAY);
-
-            DesenharRanking(ranking, 640, 340, 0);
-
-            if (((int)(tempo * 2.0f)) % 2 == 0) {
-                DrawTextCentro("Pressione ENTER para comecar", 640, 530, 26, (Color){100, 240, 150, 255});
-            }
-        }
-        else if (estado == ESTADO_FASE) {
-            DrawRectangle(0, 0, LARGURA, ALTURA, Fade(BLACK, 0.78f));
-
-            snprintf(buf, sizeof(buf), "FASE %d CONCLUIDA!", j->fase - 1);
-            DrawTextCentro(buf, 640, 190, 54, (Color){100, 240, 150, 255});
-
-            snprintf(buf, sizeof(buf), "Pontos: %d  (bonus de fase: +%d)", j->pontos, 300 * (j->fase - 1));
-            DrawTextCentro(buf, 640, 270, 24, WHITE);
-
-            snprintf(buf, sizeof(buf), "Proxima: Fase %d  |  %d regioes ativas  |  eventos mais fortes",
-                     j->fase, RegioesDaFase(j->fase));
-            DrawTextCentro(buf, 640, 315, 20, LIGHTGRAY);
-
-            DrawTextCentro("As baterias recuperam 35% antes da proxima fase.", 640, 345, 18, LIGHTGRAY);
-            DrawTextCentro("Pressione ENTER para continuar", 640, 420, 26, YELLOW);
-        }
-        else if (estado == ESTADO_FIM) {
-            DrawRectangle(0, 0, LARGURA, ALTURA, Fade(BLACK, 0.80f));
-
-            DrawTextCentro(j->vitoria ? "BRASIL SALVO!" : "APAGAO NACIONAL", 640, 90, 56,
-                           j->vitoria ? (Color){100, 240, 150, 255} : RED);
-            DrawTextCentro(j->mensagem, 640, 160, 20, WHITE);
-
-            snprintf(buf, sizeof(buf), "Pontuacao final: %d", j->pontos);
-            DrawTextCentro(buf, 640, 200, 30, (Color){255, 220, 80, 255});
-
-            if (j->posicaoRanking > 0) {
-                snprintf(buf, sizeof(buf), "Voce entrou no ranking: posicao #%d!", j->posicaoRanking);
-                DrawTextCentro(buf, 640, 245, 22, (Color){100, 240, 150, 255});
-            }
-
-            DesenharRanking(ranking, 640, 300, j->posicaoRanking);
-            DrawTextCentro("R: jogar de novo   |   ESC: sair", 640, 500, 22, LIGHTGRAY);
-        }
-
-        DrawFPS(LARGURA - 75, ALTURA - 25);
         EndDrawing();
     }
 
