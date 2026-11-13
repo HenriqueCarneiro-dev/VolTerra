@@ -653,45 +653,36 @@ static void ajustarProducao(float delta)
 static void atualizarJogo(float dt){
     Vector2 mouse = GetMousePosition();
 
-    if (IsKeyPressed(KEY_P)) pausa = !pausa;
-    if (pausa) return;
-
-    // 3 relogios:  tempo total do jogo; tempo restante mensagem tela; tempo restante do recarregamento de apio // 
-    tempoTotal += dt;
-    if (msgT > 0) msgT -= dt;
-    if (cooldown > 0) cooldown -= dt;
-
-    // Selecao: botao esquerdo = ORIGEM, direito = DESTINO //
-    for (int i = 0; i < N; i++) {
-        if (!r[i].ativa || !dentro(mouse, r[i].pt, r[i].n)) continue;
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) origem = i;
-        if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) destino = i;
+    if (IsKeyPressed(KEY_P) || IsKeyReleased(KEY_ESCAPE)) {pausa = !pausa; arrasta = -1 }
+    if (pausa){
+        if(clicou(btnContinuar)) pausa = false;
+        if(clicou(btnMenuPausa)){ pausa = false; tela = TELA_MENU;}
+        return;
     }
-    if (IsKeyPressed(KEY_TAB)) { int t = origem; origem = destino; destino = t; }
 
-    // Producao da regiao de origem //
-    if (IsKeyDown(KEY_UP) || IsKeyDown(KEY_W)) r[origem].ajuste += dt * 0.8f;
-    if (IsKeyDown(KEY_DOWN) || IsKeyDown(KEY_S)) r[origem].ajuste -= dt * 0.8f;
-    if (IsKeyPressed(KEY_R)) r[origem].ajuste = 1.0f;
-    if (r[origem].ajuste < 0.3f) r[origem].ajuste = 0.3f;
-    if (r[origem].ajuste > 1.7f) r[origem].ajuste = 1.7f;
-
-    // Enviar apoio //
-    if (IsKeyPressed(KEY_E)) {
-        if (origem == destino) mensagem("Escolha um destino diferente (botao direito).", 3.0f);
-        else if (cooldown > 0) mensagem("Linha de transmissao carregando...", 2.0f);
-        else if (r[origem].bat < 20.0f) mensagem("Origem sem energia suficiente!", 3.0f);
+   /* Segurar e arrastar de uma regiao para outra */
+    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+        if (CheckCollisionPointRec(mouse, btnMenos)) ajustarProducao(-0.1f);
+        else if (CheckCollisionPointRec(mouse, btnMais)) ajustarProducao(0.1f);
         else {
-            r[origem].bat -= 10.0f;
-            r[destino].bat += 8.0f;
-            cooldown = 1.2f;
-            char buf[120];
-            snprintf(buf, sizeof(buf), "Apoio: %s -> %s", r[origem].nome, r[destino].nome);
-            mensagem(buf, 2.5f);
+            int i = regiaoSob(mouse);
+            if (i >= 0) { arrasta = i; selecionada = i; }
         }
     }
+    if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON) && arrasta >= 0) {
+        int d = regiaoSob(mouse);
+        if (d >= 0 && d != arrasta) enviarApoio(arrasta, d);
+        arrasta = -1;
+    }
 
-    // Eventos  - remove eventos expirados//
+    /* Producao da regiao selecionada */
+    if (IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_W)) ajustarProducao(0.1f);
+    if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_S)) ajustarProducao(-0.1f);
+    float roda = GetMouseWheelMove();
+    if (roda != 0.0f) ajustarProducao(roda * 0.05f);
+    if (IsKeyPressed(KEY_R)) r[selecionada].ajuste = 1.0f;
+
+    /* Eventos */
     for (int e = 0; e < nev; e++) evs[e].t -= dt;
     for (int e = 0; e < nev;) {
         if (evs[e].t <= 0) {
@@ -706,18 +697,16 @@ static void atualizarJogo(float dt){
     }
     atualizarMultiplicadores();
 
-    // Baterias, alertas e pontos por segundo //
+    /* Baterias, alertas e pontos por segundo */
     for (int i = 0; i < N; i++) {
         Regiao *g = &r[i];
         if (!g->ativa) continue;
 
-        // saldo é producao menos consumo. saldo+ carrega bateria e - descarrega//
         float saldo = g->ajuste * g->multProd - g->consBase * g->multCons;
         g->bat += saldo * 4.0f * dt;
         if (g->bat < 0) g->bat = 0;
         if (g->bat > 105) g->bat = 105;
 
-        //O alerta de blackout liga abaixo de 50%, mas só desliga quando passa de 53%
         if (!g->inBlack && g->bat < LIM_BAIXO) { g->inBlack = true; g->tBlack = 0; }
         else if (g->inBlack && g->bat >= LIM_BAIXO + 3) g->inBlack = false;
 
@@ -726,14 +715,13 @@ static void atualizarJogo(float dt){
 
         if (g->bat >= LIM_BAIXO && g->bat <= LIM_ALTO) pontosAcum += fase * dt;
 
-        //Com o alerta ligado, conta o tempo. Ao chegar em 10s (TEMPO_ALERTA), abre o minigame e dá return//
         if (g->inBlack) {
             g->tBlack += dt;
-            if (g->tBlack >= TEMPO_ALERTA) { iniciarMinigame(i, MINI_BLACKOUT); return; }
+            if (g->tBlack >= TEMPO_ALERTA) { iniciarMinigame(i, true); return; }
         }
         if (g->inSobre) {
             g->tSobre += dt;
-            if (g->tSobre >= TEMPO_ALERTA) { iniciarMinigame(i, MINI_SOBRECARGA); return; }
+            if (g->tSobre >= TEMPO_ALERTA) { iniciarMinigame(i, false); return; }
         }
     }
     if (pontosAcum >= 1.0f) { pontos += (int)pontosAcum; pontosAcum -= (int)pontosAcum; }
@@ -742,37 +730,118 @@ static void atualizarJogo(float dt){
     if (tempoDia >= DIA_SEG) fimDoDia();
 }
 
+/* ------------- Menu e ajuda -------------*/
 
-// Continuar Aqui: (refinamento desenho mundo) //
-//
+// atualiza o menu principal //
+static void atualizarMenu(void){
+    if(clicou(btnJogar) || IsKeyReleased(KEY_ENTER)) iniciarPartida();
+    else if(clicou(btnComo)) {paginaAjuda = 0; tela = TELA_AJUDA;}
+    else if(clicou(btnSair)) sair = true;
+}
 
-/* ------------- Desenho ------------- */
+//atualiza a ajuda do jogo //
+static void atualizarAjuda(void){
+    if ((clicou(btnProx) || IsKeyPressed(KEY_RIGHT)) && paginaAjuda < 2) paginaAjuda++;
+    else if((clicou(btnAnt) || IsKeyPressed(KEY_LEFT)) && paginaAjuda > 0) paginaAjuda--;
+    else if(clicou(btnVoltar) || IsKeyPressed(KEY_ESCAPE)) tela = TELA_MENU);
+}
+
+// desenha menu jogo inicial //
+static void desenharMenu(void){
+    textoCentro("Vol TERRA", W/ 2,90,64, SKYBLUE);
+    textoCentro("Gerencie e energia do Brasil", W/2,170,26, WHITE);
+    textoCentro("Equilibre as regioes: nem blackout, nem sobrecarga", W / 2, 215, 19, (Color){110, 230, 150, 255});
+
+    desenharBotao(btnJogar, "JOGAR");
+    desenharBotao(btnComo, "COMO JOGAR");
+    desenharBotao(btnSair, "SAIR");
+
+    textoCentro("RANKING", W / 2, 520, 20, YELLOW);
+    for (int i = 0; i < 5; i++)
+        textoCentro(TextFormat("%d.  %d pts", i + 1, ranking[i]), W / 2, 548 + i * 24, 18, WHITE);
+}
+
+//desenhar parte dicas ajuda //
+static void desenharAjuda(void){
+    static const char *titulos[3] = {"OBJETIVO", "COMO JOGAR", "CRISES E MINIGAMES"};
+    static const char *linhas[3][6] = {
+        {
+            "Voce cuida da rede de energia do Brasil durante 5 fases.",
+            "Cada regiao tem uma BATERIA: mantenha entre 50% e 85%.",
+            "Abaixo de 50%: risco de BLACKOUT.",
+            "Acima de 85%: risco de SOBRECARGA. Chegar a 100% nao e a meta!",
+            "Fase 1: 3 regioes | Fase 2: 4 regioes | Fases 3 a 5: 5 regioes.",
+            "Cada dia equilibrado da pontos, e dias seguidos aumentam o bonus."
+        },
+        {
+            "SEGURE e ARRASTE de uma regiao ate outra para enviar energia.",
+            "Clique numa regiao para seleciona-la.",
+            "Botoes + e - (ou W/S, ou a roda do mouse) mudam a producao.",
+            "Produzir mais enche a bateria; produzir menos esvazia.",
+            "EVENTOS (chuva, seca, calor...) favorecem ou prejudicam regioes.",
+            "A lista de eventos fica a esquerda do mapa."
+        },
+        {
+            "Regiao fora da faixa por 10 segundos entra em crise.",
+            "BLACKOUT: ligar fios por cor OU clicar disjuntores de 1 a 6.",
+            "SOBRECARGA: resfriar turbinas OU parar o marcador na zona verde.",
+            "Vencer o minigame resolve a crise. Falhar custa 1 das 3 vidas.",
+            "Quanto maior a fase, mais rapidos ficam os minigames.",
+            "P ou ESC pausa o jogo."
+        }
+    };
+
+    DrawRectangle(240, 70, 800, 540, Fade(BLACK, 0.45f));
+    DrawRectangleLines(240, 70, 800, 540, (Color){90, 120, 170, 255});
+    textoCentro("COMO JOGAR", W / 2, 90, 40, SKYBLUE);
+    textoCentro(titulos[paginaAjuda], W / 2, 155, 28, YELLOW);
+    for (int i = 0; i < 6; i++)
+        DrawText(linhas[paginaAjuda][i], 280, 215 + i * 55, 20, WHITE);
+    textoCentro(TextFormat("Pagina %d de 3", paginaAjuda + 1), W / 2, 590, 16, LIGHTGRAY);
+
+    if (paginaAjuda > 0) desenharBotao(btnAnt, "< Anterior");
+    desenharBotao(btnVoltar, "Menu");
+    if (paginaAjuda < 2) desenharBotao(btnProx, "Proxima >");
+}
+
+/* ------------- Desenho do jogo ------------- */
 
 static void desenharMapa(void)
 {
+    Vector2 mouse = GetMousePosition();
+
     for (int i = 0; i < N; i++) {
         Color base = r[i].ativa ? r[i].cor : (Color){50, 58, 70, 255};
         preencher(r[i].pt, r[i].n, base);
-        if (r[i].ativa && r[i].inBlack) {
-            float p = 0.25f + 0.2f * sinf(tempoTotal * 9.0f);
-            preencher(r[i].pt, r[i].n, Fade(RED, p));
-        } else if (r[i].ativa && r[i].inSobre) {
-            float p = 0.25f + 0.2f * sinf(tempoTotal * 9.0f);
-            preencher(r[i].pt, r[i].n, Fade(ORANGE, p));
-        }
+        if (r[i].ativa && r[i].inBlack)
+            preencher(r[i].pt, r[i].n, Fade(RED, 0.25f + 0.2f * sinf(tempoTotal * 9.0f)));
+        else if (r[i].ativa && r[i].inSobre)
+            preencher(r[i].pt, r[i].n, Fade(ORANGE, 0.25f + 0.2f * sinf(tempoTotal * 9.0f)));
     }
-    for (int i = 0; i < N; i++) {
+    for (int i = 0; i < N; i++)
         for (int k = 0; k < r[i].n; k++)
             DrawLineEx(r[i].pt[k], r[i].pt[(k + 1) % r[i].n], 2.0f, (Color){15, 25, 40, 255});
+
+    /* Arrasto em andamento */
+    if (arrasta >= 0 && tela == TELA_JOGO) {
+        Vector2 a = r[arrasta].c;
+        DrawLineEx(a, mouse, 4, YELLOW);
+        DrawCircleV(mouse, 7, YELLOW);
+        int d = regiaoSob(mouse);
+        if (d >= 0 && d != arrasta) {
+            DrawCircleLines((int)r[d].c.x, (int)r[d].c.y, 54, SKYBLUE);
+            DrawCircleLines((int)r[d].c.x, (int)r[d].c.y, 55, SKYBLUE);
+        }
     }
 
-    /* Linha de apoio */
-    if (origem != destino && r[origem].ativa && r[destino].ativa) {
-        Vector2 a = r[origem].c, b = r[destino].c;
-        DrawLineEx(a, b, 2.0f, Fade(YELLOW, 0.5f));
-        for (int k = 0; k < 4; k++) {
-            float t = fmodf(tempoTotal * 0.8f + k * 0.25f, 1.0f);
-            DrawCircleV((Vector2){a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t}, 4, YELLOW);
+    /* Animacao do apoio enviado */
+    if (fluxoT > 0) {
+        Vector2 a = r[fluxoO].c, b = r[fluxoD].c;
+        float p = 1.0f - fluxoT / 0.7f;
+        for (int k = 0; k < 5; k++) {
+            float t = p - k * 0.06f;
+            if (t < 0 || t > 1) continue;
+            DrawCircleV((Vector2){a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t}, 6, YELLOW);
         }
     }
 
@@ -790,19 +859,17 @@ static void desenharMapa(void)
         textoCentro(g->nome, cx, cy + 12, 14, WHITE);
         textoCentro(TextFormat("%.0f%%", g->bat), cx, cy + 28, 18, corBat(g->bat));
 
-        if (i == origem) {
-            DrawCircleLines(cx, cy, 52 + (int)(2 * sinf(tempoTotal * 6)), YELLOW);
-            textoCentro("ORIGEM", cx, cy - 66, 14, YELLOW);
-        }
-        if (i == destino && destino != origem) {
-            DrawCircleLines(cx, cy, 52, SKYBLUE);
-            textoCentro("DESTINO", cx, cy - 66, 14, SKYBLUE);
+        if (i == selecionada) {
+            DrawCircleLines(cx, cy, 52, YELLOW);
+            DrawCircleLines(cx, cy, 53, YELLOW);
         }
         if (g->inBlack)
             textoCentro(TextFormat("BLACKOUT %.1fs", TEMPO_ALERTA - g->tBlack), cx, cy - 48, 15, RED);
         if (g->inSobre)
             textoCentro(TextFormat("SOBRECARGA %.1fs", TEMPO_ALERTA - g->tSobre), cx, cy - 48, 15, ORANGE);
     }
+
+    DrawText("Segure e arraste de uma regiao para outra para enviar energia", 300, 700, 14, LIGHTGRAY);
 }
 
 static void listaAfetados(int id, char *fav, char *pre, size_t sz)
@@ -837,11 +904,11 @@ static void desenharEventos(void)
     }
 
     DrawText("CONTROLES", 22, 548, 16, YELLOW);
-    DrawText("Botao ESQ: escolher ORIGEM", 22, 572, 13, LIGHTGRAY);
-    DrawText("Botao DIR: escolher DESTINO", 22, 590, 13, LIGHTGRAY);
-    DrawText("E: enviar apoio  |  TAB: inverter", 22, 608, 13, LIGHTGRAY);
-    DrawText("W/S ou Setas: producao da origem", 22, 626, 13, LIGHTGRAY);
-    DrawText("R: producao normal  |  P: pausa", 22, 644, 13, LIGHTGRAY);
+    DrawText("Segure e arraste: enviar energia", 22, 572, 13, LIGHTGRAY);
+    DrawText("Clique: selecionar regiao", 22, 590, 13, LIGHTGRAY);
+    DrawText("+ / - ou W/S: producao", 22, 608, 13, LIGHTGRAY);
+    DrawText("R: producao normal", 22, 626, 13, LIGHTGRAY);
+    DrawText("P ou ESC: pausa", 22, 644, 13, LIGHTGRAY);
 }
 
 static void desenharPainel(void)
@@ -855,8 +922,8 @@ static void desenharPainel(void)
     DrawText("REGIOES", 950, 140, 16, LIGHTGRAY);
     for (int i = 0; i < N; i++) {
         Regiao *g = &r[i];
-        int y = 164 + i * 78;
-        Color nome = (i == origem) ? YELLOW : ((i == destino) ? SKYBLUE : WHITE);
+        int y = 164 + i * 74;
+        Color nome = (i == selecionada) ? YELLOW : WHITE;
         if (!g->ativa) nome = GRAY;
         DrawText(g->nome, 950, y, 16, nome);
 
@@ -873,17 +940,16 @@ static void desenharPainel(void)
         float saldo = (prod - cons) * 4.0f;
         DrawText(TextFormat("Prod %.0f%%", prod * 100), 950, y + 44, 13, SKYBLUE);
         DrawText(TextFormat("Cons %.0f%%", cons * 100), 1040, y + 44, 13, LIGHTGRAY);
-        DrawText(TextFormat("%+.1f%%/s", saldo), 1140, y + 44, 14,
-                 saldo > 0.15f ? GREEN : (saldo < -0.15f ? RED : WHITE));
+        DrawText(TextFormat("%+.1f%%/s", saldo), 1140, y + 44, 14, saldo > 0.15f ? GREEN : (saldo < -0.15f ? RED : WHITE));
     }
 
-    DrawText(TextFormat("Producao da origem: %.0f%%", r[origem].ajuste * 100), 950, 560, 16, SKYBLUE);
-    DrawText("Faixa segura: 50% a 85%", 950, 590, 15, (Color){110, 230, 150, 255});
-    DrawText("Abaixo: blackout | Acima: sobrecarga", 950, 612, 14, LIGHTGRAY);
-    DrawText(TextFormat("Apoio: %s", cooldown > 0 ? "carregando..." : "pronto (tecla E)"), 950, 640, 15,
-             cooldown > 0 ? ORANGE : GREEN);
+    DrawText(TextFormat("Producao: %s %.0f%%", r[selecionada].nome, r[selecionada].ajuste * 100), 950, 560, 16, SKYBLUE);
+    desenharBotao(btnMenos, "-");
+    desenharBotao(btnMais, "+");
+    DrawText("Faixa segura: 50% a 85%", 950, 640, 15, (Color){110, 230, 150, 255});
+    DrawText(TextFormat("Apoio: %s", cooldown > 0 ? "carregando..." : "pronto"), 950, 664, 15,cooldown > 0 ? ORANGE : GREEN);
+    DrawText("Abaixo: blackout | Acima: sobrecarga", 950, 688, 13, LIGHTGRAY);
 
-    /* Barra do dia e mensagem */
     DrawRectangle(290, 82, 600, 8, (Color){40, 48, 68, 255});
     DrawRectangle(290, 82, (int)(600 * tempoDia / DIA_SEG), 8, SKYBLUE);
     DrawText("VOL TERRA  |  Rede Nacional de Energia", 20, 18, 22, RAYWHITE);
@@ -893,10 +959,13 @@ static void desenharPainel(void)
         DrawRectangle(290, 28, 600, 34, Fade(BLACK, 0.6f));
         textoCentro(msg, 590, 36, 17, WHITE);
     }
-    if (pausa) {
-        DrawRectangle(0, 0, W, H, Fade(BLACK, 0.6f));
-        textoCentro("PAUSADO - P para continuar", W / 2, H / 2 - 12, 30, WHITE);
-    }
+}
+
+static void desenharBarraTempo(void){
+    DrawRectangle(380, 238, 520, 8, (Color){40, 48, 68, 255});
+    float p = mini.tempo / mini.tempoMax;
+    if (p < 0) p = 0;
+    DrawRectangle(380, 238, (int)(520 * p), 8, p > 0.35f ? GREEN : RED);
 }
 
 static void desenharMinigame(void)
@@ -905,39 +974,82 @@ static void desenharMinigame(void)
     DrawRectangle(320, 150, 640, 420, (Color){25, 32, 53, 255});
     DrawRectangleLines(320, 150, 640, 420, YELLOW);
 
-    if (mini.tipo == MINI_BLACKOUT) {
-        textoCentro(TextFormat("BLACKOUT: %s", r[mini.reg].nome), 640, 168, 26, RED);
-        textoCentro("Arraste cada fio ate a tomada da mesma cor", 640, 206, 17, WHITE);
-        DrawRectangle(380, 238, 520, 8, (Color){40, 48, 68, 255});
-        DrawRectangle(380, 238, (int)(520 * mini.tempo / 15.0f), 8, mini.tempo > 5 ? GREEN : RED);
+   switch (mini.tipo) {
+        case MINI_FIOS:
+            textoCentro(TextFormat("BLACKOUT: %s", r[mini.reg].nome), 640, 168, 26, RED);
+            textoCentro("Arraste cada fio ate a tomada da mesma cor", 640, 206, 17, WHITE);
+            desenharBarraTempo();
+            for (int i = 0; i < 4; i++)
+                if (mini.ligados[i]) DrawLineEx(noEsq(i), noDir(mini.destino[i]), 8, fios[i]);
+            if (mini.arrasta >= 0) DrawLineEx(noEsq(mini.arrasta), GetMousePosition(), 8, fios[mini.arrasta]);
+            for (int i = 0; i < 4; i++) {
+                DrawCircleV(noEsq(i), 17, fios[i]);
+                DrawCircleV(noDir(i), 17, fios[mini.ordem[i]]);
+            }
+            textoCentro(TextFormat("Tempo: %.1f", mini.tempo), 640, 540, 20, WHITE);
+            break;
 
-        for (int i = 0; i < 4; i++)
-            if (mini.ligados[i]) DrawLineEx(noEsq(i), noDir(mini.destino[i]), 8, fios[i]);
-        if (mini.arrasta >= 0) DrawLineEx(noEsq(mini.arrasta), GetMousePosition(), 8, fios[mini.arrasta]);
+        case MINI_DISJUNTOR:
+            textoCentro(TextFormat("BLACKOUT: %s", r[mini.reg].nome), 640, 168, 26, RED);
+            textoCentro("Religue os disjuntores na ordem: 1, 2, 3... (erro custa tempo)", 640, 206, 17, WHITE);
+            desenharBarraTempo();
+            for (int s = 0; s < 6; s++) {
+                Vector2 c = centroSlot(s);
+                bool feito = mini.slot[s] < mini.proximo;
+                DrawCircleV(c, 38, feito ? (Color){40, 140, 80, 255} : (Color){60, 90, 150, 255});
+                DrawCircleLines((int)c.x, (int)c.y, 38, mini.flash > 0 ? RED : WHITE);
+                textoCentro(TextFormat("%d", mini.slot[s]), (int)c.x, (int)c.y - 14, 28, WHITE);
+            }
+            textoCentro(TextFormat("Proximo: %d   |   Tempo: %.1f", mini.proximo > 6 ? 6 : mini.proximo, mini.tempo),
+                        640, 540, 20, WHITE);
+            break;
 
-        for (int i = 0; i < 4; i++) {
-            DrawCircleV(noEsq(i), 17, fios[i]);
-            DrawCircleV(noDir(i), 17, fios[mini.ordem[i]]);
+        case MINI_TURBINAS:
+            textoCentro(TextFormat("SOBRECARGA: %s", r[mini.reg].nome), 640, 168, 26, ORANGE);
+            textoCentro("Clique nas turbinas para esfriar antes que superaquecam!", 640, 206, 17, WHITE);
+            desenharBarraTempo();
+            for (int i = 0; i < 4; i++) {
+                int x = 380 + i * 140;
+                float p = mini.calor[i] / 100.0f;
+                if (p > 1) p = 1;
+                DrawRectangle(x, 270, 100, 200, (Color){40, 48, 68, 255});
+                DrawRectangle(x, 470 - (int)(200 * p), 100, (int)(200 * p),
+                              p > 0.8f ? RED : (p > 0.55f ? ORANGE : GREEN));
+                DrawRectangleLines(x, 270, 100, 200, WHITE);
+                textoCentro(TextFormat("Turbina %d", i + 1), x + 50, 478, 15, WHITE);
+            }
+            textoCentro(TextFormat("Resista ate o fim: %.1f", mini.tempo), 640, 520, 20, LIGHTGRAY);
+            break;
+
+        case MINI_SINCRONIA: {
+            textoCentro(TextFormat("SOBRECARGA: %s", r[mini.reg].nome), 640, 168, 26, ORANGE);
+            textoCentro("Clique (ou ESPACO) quando o marcador estiver na zona verde", 640, 206, 17, WHITE);
+            desenharBarraTempo();
+            DrawRectangle(380, 330, 520, 44, (Color){40, 48, 68, 255});
+            int zx = 380 + (int)(520 * (mini.zona - mini.larg / 2));
+            DrawRectangle(zx, 330, (int)(520 * mini.larg), 44, (Color){40, 170, 90, 255});
+            int mx = 380 + (int)(520 * mini.marcador);
+            DrawRectangle(mx - 3, 320, 6, 64, mini.flash > 0 ? RED : WHITE);
+            DrawRectangleLines(380, 330, 520, 44, WHITE);
+            textoCentro(TextFormat("Acertos: %d / 4", mini.acertos), 640, 420, 24, WHITE);
+            textoCentro(TextFormat("Tempo: %.1f", mini.tempo), 640, 470, 20, LIGHTGRAY);
+            break;
         }
-        textoCentro(TextFormat("Tempo: %.1f", mini.tempo), 640, 540, 20, WHITE);
-    } else {
-        textoCentro(TextFormat("SOBRECARGA: %s", r[mini.reg].nome), 640, 168, 26, ORANGE);
-        textoCentro("Clique nas turbinas para reduzir a producao antes que superaquecam!", 640, 206, 16, WHITE);
-        DrawRectangle(380, 238, 520, 8, (Color){40, 48, 68, 255});
-        DrawRectangle(380, 238, (int)(520 * mini.tempo / 14.0f), 8, SKYBLUE);
-
-        for (int i = 0; i < 4; i++) {
-            int x = 380 + i * 140;
-            float p = mini.calor[i] / 100.0f;
-            if (p > 1) p = 1;
-            DrawRectangle(x, 270, 100, 200, (Color){40, 48, 68, 255});
-            DrawRectangle(x, 470 - (int)(200 * p), 100, (int)(200 * p),
-                          p > 0.8f ? RED : (p > 0.55f ? ORANGE : GREEN));
-            DrawRectangleLines(x, 270, 100, 200, WHITE);
-            textoCentro(TextFormat("Turbina %d", i + 1), x + 50, 478, 15, WHITE);
-        }
-        textoCentro(TextFormat("Tempo restante: %.1f", mini.tempo), 640, 520, 20, LIGHTGRAY);
     }
+}
+
+// desenha a tela de fim de jogo (vitoria ou derrota com pontuacao e ranking) //
+static void desenharFim(void){
+    textoCentro(vitoria ? "REDE ESTABILIZADA - VOCE VENCEU!" : "FIM DE JOGO", W / 2, 100, 42,
+                vitoria ? GREEN : RED);
+    textoCentro(TextFormat("Pontuacao: %d", pontos), W / 2, 165, 28, WHITE);
+    if (posRanking > 0)
+        textoCentro(TextFormat("Voce ficou em %do lugar no ranking!", posRanking), W / 2, 205, 20, GREEN);
+    textoCentro("RANKING", W / 2, 250, 22, YELLOW);
+    for (int i = 0; i < 5; i++)
+        textoCentro(TextFormat("%d.  %d pts", i + 1, ranking[i]), W / 2, 290 + i * 30, 20,
+                    (posRanking == i + 1) ? GREEN : WHITE);
+    desenharBotao(btnFimMenu, "MENU");
 }
 
 
@@ -946,53 +1058,48 @@ static void desenharMinigame(void)
 int main(void)
 {
     InitWindow(W, H, "VolTerra - Gerenciamento de Energia");
+    SetExitKey(KEY_NULL);
     SetTargetFPS(60);
     SetRandomSeed((unsigned int)time(NULL));
     carregarRanking();
 
-    while (!WindowShouldClose()) {
+    while (!WindowShouldClose() && !sair) {
         float dt = GetFrameTime();
         if (dt > 0.1f) dt = 0.1f;
 
-        if (estado == MENU && IsKeyPressed(KEY_ENTER)) iniciarPartida();
-        else if (estado == JOGO) atualizarJogo(dt);
-        else if (estado == MINI) atualizarMinigame(dt);
-        else if (estado == FIM && IsKeyPressed(KEY_ENTER)) estado = MENU;
+        switch (tela) {
+            case TELA_MENU:  atualizarMenu(); break;
+            case TELA_AJUDA: atualizarAjuda(); break;
+            case TELA_JOGO:  atualizarJogo(dt); break;
+            case TELA_MINI:  atualizarMinigame(dt); break;
+            case TELA_FIM:
+                if (IsKeyPressed(KEY_ENTER) || clicou(btnFimMenu)) tela = TELA_MENU;
+                break;
+        }
 
         BeginDrawing();
         DrawRectangleGradientV(0, 0, W, H, (Color){8, 24, 46, 255}, (Color){10, 45, 78, 255});
 
-        if (estado == MENU) {
-            textoCentro("VOL TERRA", W / 2, 90, 56, SKYBLUE);
-            textoCentro("Gerencie a energia do Brasil", W / 2, 160, 24, WHITE);
-            textoCentro("Mantenha cada regiao entre 50% e 85% de bateria", W / 2, 215, 21, GREEN);
-            textoCentro("Abaixo de 50%: blackout. Acima de 85%: sobrecarga.", W / 2, 248, 18, ORANGE);
-            textoCentro("Botao esquerdo = origem | Botao direito = destino | E = enviar apoio", W / 2, 295, 18, LIGHTGRAY);
-            textoCentro("W/S ajustam a producao da regiao de origem", W / 2, 322, 18, LIGHTGRAY);
-            textoCentro("Partida de 10 minutos: 5 fases, eventos cada vez mais fortes", W / 2, 349, 18, LIGHTGRAY);
-            textoCentro("ENTER para iniciar", W / 2, 410, 26, YELLOW);
-            textoCentro("RANKING", W / 2, 470, 20, YELLOW);
-            for (int i = 0; i < 5; i++)
-                textoCentro(TextFormat("%d.  %d pts", i + 1, ranking[i]), W / 2, 500 + i * 24, 18, WHITE);
-        } else if (estado == JOGO) {
-            desenharMapa();
-            desenharEventos();
-            desenharPainel();
-        } else if (estado == MINI) {
-            desenharMapa();
-            desenharPainel();
-            desenharMinigame();
-        } else {
-            textoCentro(vitoria ? "REDE ESTABILIZADA - VOCE VENCEU!" : "FIM DE JOGO", W / 2, 100, 42,
-                        vitoria ? GREEN : RED);
-            textoCentro(TextFormat("Pontuacao: %d", pontos), W / 2, 165, 28, WHITE);
-            if (posRanking > 0)
-                textoCentro(TextFormat("Voce ficou em %do lugar no ranking!", posRanking), W / 2, 205, 20, GREEN);
-            textoCentro("RANKING", W / 2, 250, 22, YELLOW);
-            for (int i = 0; i < 5; i++)
-                textoCentro(TextFormat("%d.  %d pts", i + 1, ranking[i]), W / 2, 290 + i * 30, 20,
-                            (posRanking == i + 1) ? GREEN : WHITE);
-            textoCentro("ENTER para voltar ao menu", W / 2, 500, 20, LIGHTGRAY);
+        switch (tela) {
+            case TELA_MENU:  desenharMenu(); break;
+            case TELA_AJUDA: desenharAjuda(); break;
+            case TELA_JOGO:
+                desenharMapa();
+                desenharEventos();
+                desenharPainel();
+                if (pausa) {
+                    DrawRectangle(0, 0, W, H, Fade(BLACK, 0.65f));
+                    textoCentro("PAUSADO", W / 2, 250, 40, WHITE);
+                    desenharBotao(btnContinuar, "CONTINUAR");
+                    desenharBotao(btnMenuPausa, "MENU");
+                }
+                break;
+            case TELA_MINI:
+                desenharMapa();
+                desenharPainel();
+                desenharMinigame();
+                break;
+            case TELA_FIM:   desenharFim(); break;
         }
         EndDrawing();
     }
