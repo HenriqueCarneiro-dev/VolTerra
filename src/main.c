@@ -17,8 +17,8 @@
 #define MAX_EV 5
 
 enum {NORTE, NORDESTE, CENTRO, SUDESTE, SUL};
-typedef enum { MENU, JOGO, MINI, FIM} Estado;
-typedef enum { MINI_BLACKOUT, MINI_SOBRECARGA} TipoMini;
+typedef enum { TELA_MENU, TELA_AJUDA, TELA_JOGO, TELA_MINI, TELA_FIM } Tela;
+typedef enum { MINI_FIOS, MINI_DISJUNTOR, MINI_TURBINAS, MINI_SINCRONIA } TipoMini;
 
 typedef struct {
     const char *nome;
@@ -44,15 +44,24 @@ typedef struct { int id; float t, dur; } EvAtivo;
 typedef struct {
     TipoMini tipo;
     int reg;
-    float tempo;
+    float tempo, tempoMax;
+    /* fios */
     int ordem[4];
     bool ligados[4];
     int destino[4];
     int arrasta;
+    /* disjuntores */
+    int slot[6];
+    int proximo;
+    float flash;
+    /* turbinas */
     float calor[4], taxa[4];
+    /* sincronia */
+    float marcador, dir, zona, larg;
+    int acertos;
 } Minigame;
 
-/* ---------- Dados Mapa/Task---------- */
+/* ---------- Dados ---------- */
 
 static const char *abrev[N] = {"Norte", "Nordeste", "C.Oeste", "Sudeste", "Sul"};
 static const int ordemFase[N] = {SUDESTE, NORDESTE, CENTRO, SUL, NORTE};
@@ -116,19 +125,36 @@ static const float geoSul[][2] = {
 static Regiao r[N];
 static EvAtivo evs[MAX_EV];
 static int nev = 0;
-static Estado estado = MENU;
+static Tela tela = TELA_MENU;
 static Minigame mini;
-static int fase, dia, origem, destino, vidas, streak, pontos;
+static int fase, dia, selecionada, arrasta, vidas, streak, pontos;
 static float tempoDia, tempoTotal, spawnT, cooldown, msgT, pontosAcum;
+static float fluxoT = 0;
+static int fluxoO = 0, fluxoD = 0;
 static char msg[200] = "";
-static bool pausa = false, vitoria = false;
+static bool pausa = false, vitoria = false, sair = false;
 static int ranking[5] = {0, 0, 0, 0, 0};
 static int posRanking = 0;
+static int paginaAjuda = 0;
+
+/* Botoes */
+static const Rectangle btnJogar = {540, 300, 200, 52};
+static const Rectangle btnComo = {540, 370, 200, 52};
+static const Rectangle btnSair = {540, 440, 200, 52};
+static const Rectangle btnAnt = {330, 640, 170, 44};
+static const Rectangle btnProx = {780, 640, 170, 44};
+static const Rectangle btnVoltar = {555, 640, 170, 44};
+static const Rectangle btnContinuar = {540, 330, 200, 50};
+static const Rectangle btnMenuPausa = {540, 400, 200, 50};
+static const Rectangle btnFimMenu = {540, 540, 200, 50};
+static const Rectangle btnMenos = {950, 590, 50, 34};
+static const Rectangle btnMais = {1010, 590, 50, 34};
 
 /* ---------------- Utilidades ---------------- */
 
-static float projX(float lon) {return 290.0f + (lon + 74.0f) * 15.2f; }
-static float projY(float lat) {return 95.0f + (5.5f - lat) * 15.2f; }
+static float projX(float lon) { return 290.0f + (lon + 74.0f) * 15.2f; }
+static float projY(float lat) { return 95.0f + (5.5f - lat) * 15.2f; }
+static float velFase(void) { return 1.0f + 0.3f * (fase - 1); }
 
 static void criarPoli(Regiao *g, const float (*d)[2], int n)
 {
@@ -147,14 +173,35 @@ static void mensagem(const char *s, float t)
     msgT = t;
 }
 
+static bool clicou(Rectangle rc)
+{
+    return IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(GetMousePosition(), rc);
+}
+
+static void desenharBotao(Rectangle rc, const char *t)
+{
+    bool hover = CheckCollisionPointRec(GetMousePosition(), rc);
+    DrawRectangleRec(rc, hover ? (Color){70, 120, 190, 255} : (Color){40, 70, 120, 255});
+    DrawRectangleLinesEx(rc, 2, hover ? WHITE : (Color){120, 160, 220, 255});
+    DrawText(t, (int)(rc.x + rc.width / 2) - MeasureText(t, 22) / 2, (int)(rc.y + rc.height / 2) - 11, 22, WHITE);
+}
+
 static bool dentro(Vector2 p, const Vector2 *v, int n)
 {
     bool ok = false;
     for (int i = 0, j = n - 1; i < n; j = i++) {
-        if(((v[i].y > p.y) != (v[j] > p.y)) && p.x < (v[j].x - v[i].x) * (p.y - v[i].y) / (v[j].y - v[i].y) + v[i].x) ok = !ok;
+        if(((v[i].y > p.y) != (v[j] > p.y)) && 
+            p.x < (v[j].x - v[i].x) * (p.y - v[i].y) / (v[j].y - v[i].y) + v[i].x) ok = !ok;
     }
 
     return ok;
+}
+
+static int regiaoSob(Vector2 m)
+{
+    for (int i = 0; i < N; i++)
+        if (r[i].ativa && dentro(m, r[i].pt, r[i].n)) return i;
+    return -1;
 }
 
 static void preencher(const Vector2 *v, int n, Color c)
@@ -222,7 +269,7 @@ static void icone(int f, float x, float y, float t)
     }
 }
 
-static Color CorBateria(float b)
+static Color CorBat(float b)
 {
     if (b < LIM_BAIXO) return RED;
     if (b < LIM_ALTO + 10) return ORANGE;
@@ -380,50 +427,86 @@ static void atualizarMultiplicadores(void)
 
 /* ---------------- Minigames ---------------- */
 
+static bool ehBlackout(void) { return mini.tipo == MINI_FIOS || mini.tipo == MINI_DISJUNTOR; }
+
 static Vector2 noEsq(int i) { return (Vector2){435, 300 + i * 65}; }
 static Vector2 noDir(int i) { return (Vector2){845, 300 + i * 65}; }
+static Vector2 centroSlot(int s) { return (Vector2){440.0f + (s % 3) * 200.0f, 330.0f + (s / 3) * 120.0f}; }
 
-static void iniciarMinigame(int id, TipoMini tipo){
-    mini.tipo = tipo;
+static void iniciarMinigame(int id, bool blackout)
+{
+    memset(&mini, 0, sizeof(mini));
     mini.reg = id;
     mini.arrasta = -1;
-    mini.tempo = (tipo == MINI_BLACKOUT) ? 15.0f : 14.0f;
+    arrasta = -1;
+    float vel = velFase();
+    int variante = GetRandomValue(0, 1);
 
-    for(int i=0; i<4; i++){
-        mini.ordem[i] = i;
-        mini.ligados[i] = false;
-        mini.destino[i] = -1;
-        //Divide por 10 para transformar o inteiro 0..300 em decimal 0.0..30.0.
-        mini.calor[i] = 30.0f + GetRandomValue(0, 300) / 10.0f;
-        mini.taxa[i] = 5.0f + GetRandomValue(0, 60) / 10.0f + false * 0.6f;
-    }
-    for (int i = 3; i > 0; i--) {
-        int k = GetRandomValue(0, i);
-        int t = mini.ordem[i];
-        mini.ordem[i] = mini.ordem[k];
-        mini.ordem[k] = t;
-    }
+    if (blackout) mini.tipo = variante ? MINI_DISJUNTOR : MINI_FIOS;
+    else mini.tipo = variante ? MINI_SINCRONIA : MINI_TURBINAS;
 
-    estado = MINI;
+    switch (mini.tipo) {
+        case MINI_FIOS:
+            mini.tempoMax = 18.0f - 2.0f * (fase - 1);
+            for (int i = 0; i < 4; i++) { mini.ordem[i] = i; mini.destino[i] = -1; }
+            for (int i = 3; i > 0; i--) {
+                int k = GetRandomValue(0, i);
+                int t = mini.ordem[i];
+                mini.ordem[i] = mini.ordem[k];
+                mini.ordem[k] = t;
+            }
+            break;
+        case MINI_DISJUNTOR:
+            mini.tempoMax = 13.0f - 1.2f * (fase - 1);
+            for (int i = 0; i < 6; i++) mini.slot[i] = i + 1;
+            for (int i = 5; i > 0; i--) {
+                int k = GetRandomValue(0, i);
+                int t = mini.slot[i];
+                mini.slot[i] = mini.slot[k];
+                mini.slot[k] = t;
+            }
+            mini.proximo = 1;
+            break;
+        case MINI_TURBINAS:
+            mini.tempoMax = 12.0f;
+            for (int i = 0; i < 4; i++) {
+                mini.calor[i] = 20.0f + GetRandomValue(0, 250) / 10.0f;
+                mini.taxa[i] = (6.0f + GetRandomValue(0, 50) / 10.0f) * vel;
+            }
+            break;
+        case MINI_SINCRONIA:
+            mini.tempoMax = 16.0f;
+            mini.marcador = 0.0f;
+            mini.dir = 1.0f;
+            mini.zona = 0.5f;
+            mini.larg = 0.22f - 0.015f * (fase - 1);
+            break;
+    }
+    mini.tempo = mini.tempoMax;
+    tela = TELA_MINI;
 }
 
-static void resolverMinigame(bool sucesso){
+static void resolverMinigame(bool sucesso)
+{
     Regiao *g = &r[mini.reg];
+    bool bl = ehBlackout();
     g->inBlack = false; g->inSobre = false;
     g->tBlack = 0; g->tSobre = 0;
+    arrasta = -1;
 
-    if(sucesso){
-        if(mini.tipo == MINI_BLACKOUT) g->bat = 62.0f;
-        else {g->bat = 76.0f; g->ajuste = 0.85f;}
-        pontos += 150;
-        mensagem("Crise Resolvida! +150 pontos", 4.0f);
-        estado = JOGO;
+    if (sucesso) {
+        if (bl) g->bat = 62.0f;
+        else { g->bat = 76.0f; g->ajuste = 0.85f; }
+        pontos += 100 + 50 * fase;
+        mensagem("Crise resolvida! Bonus de pontos", 4.0f);
+        tela = TELA_JOGO;
     } else {
         vidas--;
-        g->bat = (mini.tipo == MINI_BLACKOUT) ? 58.0f : 76.0f;
-        if(vidas <=0) { fimDePartida(false); return; }
-        mensagem("Falhou ! Voce perdeu uma vida da rede.", 4.0f);
-        estado = JOGO;
+        g->bat = bl ? 58.0f : 76.0f;
+        if (!bl) g->ajuste = 0.85f;
+        if (vidas <= 0) { fimDePartida(false); return; }
+        mensagem("Falhou! Voce perdeu uma vida da rede.", 4.0f);
+        tela = TELA_JOGO;
     }
 }
 
@@ -431,39 +514,76 @@ static void atualizarMinigame(float dt)
 {
     Vector2 mouse = GetMousePosition();
     mini.tempo -= dt;
+    if (mini.flash > 0) mini.flash -= dt;
 
-    if (mini.tipo == MINI_BLACKOUT) {
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-            for (int i = 0; i < 4; i++)
-                if (!mini.ligados[i] && CheckCollisionPointCircle(mouse, noEsq(i), 22)) mini.arrasta = i;
+    switch (mini.tipo) {
+        case MINI_FIOS: {
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+                for (int i = 0; i < 4; i++)
+                    if (!mini.ligados[i] && CheckCollisionPointCircle(mouse, noEsq(i), 22)) mini.arrasta = i;
+            }
+            if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON) && mini.arrasta >= 0) {
+                int i = mini.arrasta;
+                for (int j = 0; j < 4; j++) {
+                    if (CheckCollisionPointCircle(mouse, noDir(j), 26) && mini.ordem[j] == i) {
+                        mini.ligados[i] = true;
+                        mini.destino[i] = j;
+                    }
+                }
+                mini.arrasta = -1;
+            }
+            bool pronto = true;
+            for (int i = 0; i < 4; i++) if (!mini.ligados[i]) pronto = false;
+            if (pronto) resolverMinigame(true);
+            else if (mini.tempo <= 0) resolverMinigame(false);
+            break;
         }
-        if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON) && mini.arrasta >= 0) {
-            int i = mini.arrasta;
-            for (int j = 0; j < 4; j++) {
-                if (CheckCollisionPointCircle(mouse, noDir(j), 26) && mini.ordem[j] == i) {
-                    mini.ligados[i] = true;
-                    mini.destino[i] = j;
+        case MINI_DISJUNTOR: {
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+                for (int s = 0; s < 6; s++) {
+                    if (CheckCollisionPointCircle(mouse, centroSlot(s), 38)) {
+                        if (mini.slot[s] == mini.proximo) mini.proximo++;
+                        else if (mini.slot[s] > mini.proximo) { mini.tempo -= 1.5f; mini.flash = 0.3f; }
+                    }
                 }
             }
-            mini.arrasta = -1;
+            if (mini.proximo > 6) resolverMinigame(true);
+            else if (mini.tempo <= 0) resolverMinigame(false);
+            break;
         }
-        bool pronto = true;
-        for (int i = 0; i < 4; i++) if (!mini.ligados[i]) pronto = false;
-        if (pronto) resolverMinigame(true);
-        else if (mini.tempo <= 0) resolverMinigame(false);
-    } else {
-        bool falhou = false;
-        for (int i = 0; i < 4; i++) {
-            mini.calor[i] += mini.taxa[i] * dt;
-            Rectangle rc = {380.0f + i * 140.0f, 270, 100, 200};
-            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mouse, rc)) {
-                mini.calor[i] -= 24.0f;
-                if (mini.calor[i] < 0) mini.calor[i] = 0;
+        case MINI_TURBINAS: {
+            bool falhou = false;
+            for (int i = 0; i < 4; i++) {
+                mini.calor[i] += mini.taxa[i] * dt;
+                Rectangle rc = {380.0f + i * 140.0f, 270, 100, 200};
+                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mouse, rc)) {
+                    mini.calor[i] -= 22.0f;
+                    if (mini.calor[i] < 0) mini.calor[i] = 0;
+                }
+                if (mini.calor[i] >= 100.0f) falhou = true;
             }
-            if (mini.calor[i] >= 100.0f) falhou = true;
+            if (falhou) resolverMinigame(false);
+            else if (mini.tempo <= 0) resolverMinigame(true);
+            break;
         }
-        if (falhou) resolverMinigame(false);
-        else if (mini.tempo <= 0) resolverMinigame(true);
+        case MINI_SINCRONIA: {
+            mini.marcador += mini.dir * 0.9f * velFase() * dt;
+            if (mini.marcador > 1.0f) { mini.marcador = 1.0f; mini.dir = -1.0f; }
+            if (mini.marcador < 0.0f) { mini.marcador = 0.0f; mini.dir = 1.0f; }
+
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) || IsKeyPressed(KEY_SPACE)) {
+                if (fabsf(mini.marcador - mini.zona) <= mini.larg / 2.0f) {
+                    mini.acertos++;
+                    mini.zona = 0.15f + GetRandomValue(0, 70) / 100.0f;
+                } else {
+                    mini.tempo -= 2.0f;
+                    mini.flash = 0.3f;
+                }
+            }
+            if (mini.acertos >= 4) resolverMinigame(true);
+            else if (mini.tempo <= 0) resolverMinigame(false);
+            break;
+        }
     }
 }
 
@@ -503,6 +623,31 @@ static void fimDoDia(void){
         mensagem(buf, 5.0f);
     }
 }
+
+static void enviarApoio(int o, int d)
+{
+    if (cooldown > 0) { mensagem("Linha de transmissao carregando...", 2.0f); return; }
+    if (r[o].bat < 25.0f) { mensagem("Origem sem energia suficiente!", 3.0f); return; }
+
+    r[o].bat -= 10.0f;
+    r[d].bat += 8.0f;
+    cooldown = 0.8f;
+    fluxoO = o; fluxoD = d; fluxoT = 0.7f;
+
+    char buf[120];
+    snprintf(buf, sizeof(buf), "Apoio: %s -> %s", r[o].nome, r[d].nome);
+    mensagem(buf, 2.5f);
+}
+
+static void ajustarProducao(float delta)
+{
+    Regiao *g = &r[selecionada];
+    g->ajuste += delta;
+    if (g->ajuste < 0.3f) g->ajuste = 0.3f;
+    if (g->ajuste > 1.7f) g->ajuste = 1.7f;
+}
+
+// CONTINUE A PARTIR DAQUI
 
 // roda todo frame durante jogo -> dt = tempo em Seg //
 static void atualizarJogo(float dt){
