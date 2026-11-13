@@ -190,7 +190,7 @@ static bool dentro(Vector2 p, const Vector2 *v, int n)
 {
     bool ok = false;
     for (int i = 0, j = n - 1; i < n; j = i++) {
-        if(((v[i].y > p.y) != (v[j] > p.y)) && 
+        if(((v[i].y > p.y) != (v[j].y > p.y)) && 
             p.x < (v[j].x - v[i].x) * (p.y - v[i].y) / (v[j].y - v[i].y) + v[i].x) ok = !ok;
     }
 
@@ -269,7 +269,7 @@ static void icone(int f, float x, float y, float t)
     }
 }
 
-static Color CorBat(float b)
+static Color corBat(float b)
 {
     if (b < LIM_BAIXO) return RED;
     if (b < LIM_ALTO + 10) return ORANGE;
@@ -316,8 +316,9 @@ static void registrarRanking(void)
 static void fimDePartida(bool venceu)
 {
     vitoria = venceu;
+    arrasta = -1;
     registrarRanking();
-    estado = FIM;
+    tela = TELA_FIM;
 }
 
 /* ---------- Inicializacao ---------- */
@@ -367,12 +368,13 @@ static void iniciarPartida(void)
 {
     iniciarRegioes();
     fase = 1; dia = 1; vidas = 3; streak = 0; pontos = 0;
-    origem = SUDESTE; destino = NORDESTE;
+    selecionada = SUDESTE; arrasta = -1;
     tempoDia = 0; tempoTotal = 0; spawnT = 4.0f; cooldown = 0; pontosAcum = 0;
+    fluxoT = 0; msgT = 0;
     nev = 0; pausa = false; vitoria = false;
     ativarFase();
     mensagem("Mantenha cada regiao entre 50% e 85%!", 5.0f);
-    estado = JOGO;
+    tela = TELA_JOGO;
 }
 
 /* ---------- Eventos --------------*/
@@ -381,7 +383,7 @@ static bool eventoAfeta(int id)
 {
     for (int i=0; i<N; i++){
         if(!r[i].ativa) continue;
-        if (fabsf(evDefs[id].prod[i]) > 0.05f || fabsf(evDefs[id].cons[i]) > 0.05f) return True;
+        if (fabsf(evDefs[id].prod[i]) > 0.05f || fabsf(evDefs[id].cons[i]) > 0.05f) return true;
     }
     return false;
 }
@@ -653,7 +655,7 @@ static void ajustarProducao(float delta)
 static void atualizarJogo(float dt){
     Vector2 mouse = GetMousePosition();
 
-    if (IsKeyPressed(KEY_P) || IsKeyReleased(KEY_ESCAPE)) {pausa = !pausa; arrasta = -1 }
+    if (IsKeyPressed(KEY_P) || IsKeyReleased(KEY_ESCAPE)) {pausa = !pausa; arrasta = -1; }
     if (pausa){
         if(clicou(btnContinuar)) pausa = false;
         if(clicou(btnMenuPausa)){ pausa = false; tela = TELA_MENU;}
@@ -743,7 +745,7 @@ static void atualizarMenu(void){
 static void atualizarAjuda(void){
     if ((clicou(btnProx) || IsKeyPressed(KEY_RIGHT)) && paginaAjuda < 2) paginaAjuda++;
     else if((clicou(btnAnt) || IsKeyPressed(KEY_LEFT)) && paginaAjuda > 0) paginaAjuda--;
-    else if(clicou(btnVoltar) || IsKeyPressed(KEY_ESCAPE)) tela = TELA_MENU);
+    else if(clicou(btnVoltar) || IsKeyPressed(KEY_ESCAPE)) tela = TELA_MENU;
 }
 
 // desenha menu jogo inicial //
