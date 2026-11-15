@@ -141,7 +141,3 @@ A lógica do jogo (`jogo.c` e `regiao.c`) não desenha nada, e o desenho (`desen
 - Gustavo Cavalcanti Neves ([@GustavoCavalcantiN](https://github.com/GustavoCavalcantiN))
 
 Projeto desenvolvido na disciplina de Programação Imperativa e Funcional 2026.2, CESAR School.
-
-## Créditos
-
-O projeto utiliza a biblioteca [cli-lib](https://github.com/tgfb/cli-lib), distribuída sob a licença BSD-3-Clause, mantida em `lib/` sem modificações no código-fonte original.
