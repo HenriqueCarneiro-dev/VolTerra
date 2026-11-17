@@ -178,11 +178,16 @@ static void desenharTroca(void)
         textoCentro("FASE SECRETA", 640, 150, 48, (Color){255, 215, 60, 255});
         textoCentro("Voce nao perdeu nenhuma vida!", 640, 210, 22, WHITE);
 
-        DrawText("- Cada regiao agora se divide em seus 27 estados", 380, 260, 19, RAYWHITE);
-        DrawText("- Gestao mais leve: rede mais lenta, eventos mais fracos", 380, 292, 19, RAYWHITE);
-        DrawText("- 3 dias de 40 segundos e 5 vidas", 380, 324, 19, RAYWHITE);
-        DrawText("- Clique num estado e ajuste a producao", 380, 356, 19, RAYWHITE);
-        DrawText("- Arraste de um estado a outro para enviar energia", 380, 388, 19, RAYWHITE);
+        DrawText("- Cada regiao agora se divide em seus 27 estados",
+                 380, 260, 19, RAYWHITE);
+        DrawText("- Gestao mais leve: rede mais lenta, eventos mais fracos",
+                 380, 292, 19, RAYWHITE);
+        DrawText("- 3 dias de 40 segundos e 5 vidas",
+                 380, 324, 19, RAYWHITE);
+        DrawText("- Clique num estado e ajuste a producao",
+                 380, 356, 19, RAYWHITE);
+        DrawText("- Arraste de um estado a outro para enviar energia",
+                 380, 388, 19, RAYWHITE);
         DrawText("- Vencer rende +5000 pontos e a conquista secreta",
                  380, 420, 19, (Color){255, 215, 60, 255});
 
@@ -198,7 +203,7 @@ static void desenharTroca(void)
     int y = 95;
 
     if (!introJogo) {
-        textoCentro(TextFormat("FASE %d CONCLUIDA!", fase - 1),
+        textoCentro(TextFormat("FASE %d CONCLUIDA!", fase),
                     640, y, 30, (Color){110, 240, 150, 255});
         textoCentro(TextFormat("Bonus: +%d pontos", bonusFase),
                     640, y + 36, 20, YELLOW);
@@ -211,20 +216,35 @@ static void desenharTroca(void)
     textoCentro(TextFormat("FASE %d DE %d", fase, FASES), 640, y, 42, WHITE);
     y += 55;
 
-    caixa((Rectangle){360, (float)y, 560, 130}, 0.05f, (Color){24, 38, 68, 255}, (Color){70, 130, 200, 255});
-    DrawText("COMO FUNCIONA O SALDO E RESET:", 375, y + 10, 18, (Color){255, 215, 60, 255});
-    DrawText("- Saldo positivo (amarelo) CARREGA a bateria.", 375, y + 35, 15, RAYWHITE);
-    DrawText("- Saldo negativo (vermelho) DESCARREGA a bateria.", 375, y + 55, 15, RAYWHITE);
-    DrawText("- Use W/S, roda do mouse ou botoes +/- para equilibrar.", 375, y + 75, 15, RAYWHITE);
-    DrawText("- Pressione R ou aperte RESET para voltar a 100%.", 375, y + 95, 15, (Color){110, 240, 150, 255});
-    y += 145;
+    /*
+     * As instruções são exibidas somente no início do jogo,
+     * não na tela de conclusão de fase.
+     */
+    if (introJogo) {
+        caixa((Rectangle){360, (float)y, 560, 130}, 0.05f,
+              (Color){24, 38, 68, 255}, (Color){70, 130, 200, 255});
+
+        DrawText("COMO FUNCIONA O SALDO E RESET:",
+                 375, y + 10, 18, (Color){255, 215, 60, 255});
+        DrawText("- Saldo positivo (amarelo) CARREGA a bateria.",
+                 375, y + 35, 15, RAYWHITE);
+        DrawText("- Saldo negativo (vermelho) DESCARREGA a bateria.",
+                 375, y + 55, 15, RAYWHITE);
+        DrawText("- Use W/S, roda do mouse ou botoes +/- para equilibrar.",
+                 375, y + 75, 15, RAYWHITE);
+        DrawText("- Pressione R ou aperte RESET para voltar a 100%.",
+                 375, y + 95, 15, (Color){110, 240, 150, 255});
+        y += 145;
+    }
 
     int qtd = regioesNaFase(fase);
 
-    DrawText(TextFormat("- Regioes na rede: %d", qtd), 380, y, 17, RAYWHITE);
+    DrawText(TextFormat("- Regioes na rede: %d", qtd),
+             380, y, 17, RAYWHITE);
     y += 24;
 
-    if (fase > 1 && !introJogo && qtd > regioesNaFase(fase - 1)) {
+    if (fase > 1 && !introJogo &&
+        qtd > regioesNaFase(fase - 1)) {
         DrawText(TextFormat("- Nova regiao liberada: %s",
                             r[ordemFase[qtd - 1]].nome),
                  380, y, 17, (Color){255, 215, 60, 255});
@@ -240,11 +260,28 @@ static void desenharTroca(void)
              380, y, 17, RAYWHITE);
     y += 24;
 
-    DrawText("- Mantenha as baterias na faixa segura (30%% a 80%%)", 380, y, 17, RAYWHITE);
+    DrawText("- Mantenha as baterias na faixa segura (30%% a 80%%)",
+             380, y, 17, RAYWHITE);
 
-    textoCentro("O tempo so comeca quando voce clicar em Comecar.",
-                640, 525, 16, (Color){150, 190, 230, 255});
-    desenharBotao(btnOkTroca, "Comecar", (Color){40, 140, 90, 255});
+    if (!introJogo && fase < FASES) {
+        textoCentro("Escolha como deseja continuar:",
+                    640, 525, 16, (Color){150, 190, 230, 255});
+
+        desenharBotao(btnProsseguirFase,
+                      "Proxima fase",
+                      (Color){40, 140, 90, 255});
+
+        desenharBotao(btnEncerrarFase,
+                      "Encerrar e registrar",
+                      (Color){160, 55, 55, 255});
+    } else {
+        textoCentro("O tempo so comeca quando voce clicar em Comecar.",
+                    640, 525, 16, (Color){150, 190, 230, 255});
+
+        desenharBotao(btnOkTroca,
+                      "Comecar",
+                      (Color){40, 140, 90, 255});
+    }
 }
 
 static void desenharMini(void)
