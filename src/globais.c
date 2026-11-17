@@ -73,3 +73,5 @@ const Rectangle btnEngrenagem = {12, 660, 58, 48};
 const Rectangle painelConfig = {330, 150, 620, 540};
 const Rectangle btnModoTela   = {490, 270, 300, 52};
 const Rectangle btnFecharConfig = {490, 640, 300, 44};
+const Rectangle btnProsseguirFase = {390, 565, 230, 52};
+const Rectangle btnEncerrarFase   = {660, 565, 230, 52};
