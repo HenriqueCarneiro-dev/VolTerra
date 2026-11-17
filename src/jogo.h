@@ -11,5 +11,7 @@ void novoJogo(void);
 void iniciarSecreta(void);
 void atualizarJogo(float dt);
 void atualizarSecreta(float dt);
+void prosseguirFase(void);
+
 
 #endif /* JOGO_H */
