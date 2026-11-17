@@ -99,5 +99,7 @@ extern const Rectangle btnEngrenagem;
 extern const Rectangle painelConfig;
 extern const Rectangle btnModoTela;
 extern const Rectangle btnFecharConfig;
+extern const Rectangle btnProsseguirFase;
+extern const Rectangle btnEncerrarFase;
 
 #endif /* GLOBAIS_H */
