@@ -128,19 +128,26 @@ void iniciarSecreta(void)
     tela = TELA_TROCA;
 }
 
+static void prosseguirParaProximaFase(void)
+{
+    fase++;
+    introJogo = true;
+    prepararFase();
+    tela = TELA_TROCA;
+}
+
 static void avancarFase(void)
 {
     bonusFase = 500 * fase + vidas * 200;
     pontos += bonusFase;
-    fase++;
-    if (fase > FASES) {
-        fase = FASES;
+
+    if (fase >= FASES) {
         podeSecreta = (vidas >= vidasMax);
         fimDePartida(true);
         return;
     }
+
     introJogo = false;
-    prepararFase();
     tela = TELA_TROCA;
 }
 
@@ -169,6 +176,14 @@ static void transferirE(int o, int d)
     fluxoD = d;
     fluxoT = 1.0f;
     tocar(sndApoio);
+}
+
+void prosseguirFase(void)
+{
+    fase++;
+    introJogo = true;
+    prepararFase();
+    tela = TELA_TROCA;
 }
 
 void atualizarJogo(float dt)
