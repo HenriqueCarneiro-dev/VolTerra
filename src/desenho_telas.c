@@ -73,61 +73,448 @@ static void desenharRank(void)
     desenharBotao(btnVoltar, "Menu", (Color){160, 55, 55, 255});
 }
 
+/*  Menu principal  */
+
+static Font fTitulo, fCorpo, fCorpoMed, fPeq, fNum;
+static bool fontesProprias = false;
+
+/* Metricas das fontes (altura das maiusculas e centro delas, em fracao do tamanho). */
+#define CAP_TITULO    0.5833f
+#define CENTRO_TITULO 0.4750f
+#define CENTRO_CORPO  0.5450f
+
+void carregarFontesMenu(void)
+{
+    int cps[200];
+    int n = 0;
+    for (int c = 32; c <= 126; c++) cps[n++] = c;
+    for (int c = 160; c <= 255; c++) cps[n++] = c;   /* acentos do portugues */
+    cps[n++] = 0x2022;                               /* marcador do rodape */
+
+    fontesProprias = FileExists("assets/fonts/PixelifySans-Bold.ttf") &&
+                     FileExists("assets/fonts/Exo2-SemiBold.ttf") &&
+                     FileExists("assets/fonts/Exo2-Medium.ttf");
+
+    if (fontesProprias) {
+        fTitulo   = LoadFontEx("assets/fonts/PixelifySans-Bold.ttf", 104, cps, n);
+        fCorpo    = LoadFontEx("assets/fonts/Exo2-SemiBold.ttf", 24, cps, n);
+        fCorpoMed = LoadFontEx("assets/fonts/Exo2-Medium.ttf", 18, cps, n);
+        fPeq      = LoadFontEx("assets/fonts/Exo2-SemiBold.ttf", 14, cps, n);
+        fNum      = LoadFontEx("assets/fonts/PixelifySans-Bold.ttf", 44, cps, n);
+        if (fTitulo.texture.id == 0 || fCorpo.texture.id == 0 || fCorpoMed.texture.id == 0 ||
+            fPeq.texture.id == 0 || fNum.texture.id == 0) {
+            fontesProprias = false;
+        } else {
+            SetTextureFilter(fPeq.texture, TEXTURE_FILTER_BILINEAR);
+            SetTextureFilter(fNum.texture, TEXTURE_FILTER_BILINEAR);
+            SetTextureFilter(fTitulo.texture, TEXTURE_FILTER_BILINEAR);
+            SetTextureFilter(fCorpo.texture, TEXTURE_FILTER_BILINEAR);
+            SetTextureFilter(fCorpoMed.texture, TEXTURE_FILTER_BILINEAR);
+        }
+    }
+
+    if (!fontesProprias) {
+        /* Plano B: fonte padrao da raylib (o jogo continua funcionando sem os arquivos). */
+        fTitulo = GetFontDefault();
+        fCorpo = GetFontDefault();
+        fCorpoMed = GetFontDefault();
+        fPeq = GetFontDefault();
+        fNum = GetFontDefault();
+    }
+}
+
+void descarregarFontesMenu(void)
+{
+    if (fontesProprias) {
+        UnloadFont(fTitulo);
+        UnloadFont(fCorpo);
+        UnloadFont(fCorpoMed);
+        UnloadFont(fPeq);
+        UnloadFont(fNum);
+        fontesProprias = false;
+    }
+}
+
+/* Texto centralizado em cx; cy e o centro das letras maiusculas. */
+static void textoFonte(Font f, const char *s, float cx, float cy, float tam, float esp, float centro, Color c)
+{
+    float w = MeasureTextEx(f, s, tam, esp).x;
+    if (!fontesProprias) centro = 0.5f;
+    DrawTextEx(f, s, (Vector2){roundf(cx - w * 0.5f), roundf(cy - centro * tam)}, tam, esp, c);
+}
+
+/* Tamanho da fonte para o texto ocupar exatamente "larg" pixels (espacamento = ep * tamanho). */
+static float tamPorLargura(Font f, const char *s, float larg, float ep)
+{
+    float base = MeasureTextEx(f, s, 100.0f, 100.0f * ep).x;
+    return base > 1.0f ? 100.0f * larg / base : 20.0f;
+}
+
+static float aleat(int i, int k)
+{
+    unsigned h = (unsigned)i * 374761393u + (unsigned)k * 668265263u;
+    h = (h ^ (h >> 13)) * 1274126177u;
+    h ^= h >> 16;
+    return (float)(h % 10000u) / 10000.0f;
+}
+
+/* Arco de elipse inclinada que some nas pontas (a "orbita" do titulo). */
+static void orbita(float cx, float cy, float rx, float ry, float ang, float a0, float a1, Color c)
+{
+    const int seg = 48;
+    float ca = cosf(ang), sa = sinf(ang);
+    Vector2 ant = {0.0f, 0.0f};
+    for (int i = 0; i <= seg; i++) {
+        float a = a0 + (a1 - a0) * (float)i / (float)seg;
+        float ex = cosf(a) * rx, ey = sinf(a) * ry;
+        Vector2 p = {cx + ex * ca - ey * sa, cy + ex * sa + ey * ca};
+        if (i > 0) DrawLineEx(ant, p, 1.8f, Fade(c, 0.8f * sinf(3.14159f * (float)i / (float)seg)));
+        ant = p;
+    }
+}
+
+static void fundoMenu(float t)
+{
+    DrawRectangleGradientV(0, 0, W, H, (Color){3, 8, 24, 255}, (Color){7, 14, 34, 255});
+
+    /* estrelas pequenas, fixas, piscando devagar */
+    for (int i = 0; i < 70; i++) {
+        float x = aleat(i, 1) * W, y = aleat(i, 2) * H;
+        float pisc = 0.25f + 0.35f * (0.5f + 0.5f * sinf(t * (0.8f + aleat(i, 3)) + (float)i));
+        bool amarela = aleat(i, 4) > 0.8f;
+        Color c = amarela ? (Color){255, 200, 60, 255} : (Color){200, 215, 255, 255};
+        DrawCircle((int)x, (int)y, amarela ? 1.8f : 1.2f, Fade(c, pisc));
+    }
+
+    /* quatro pontos laranja maiores, com brilho */
+    const Vector2 laranjas[4] = {{163, 244}, {1097, 244}, {163, 521}, {1097, 521}};
+    for (int i = 0; i < 4; i++) {
+        DrawCircle((int)laranjas[i].x, (int)laranjas[i].y, 8.0f, Fade((Color){255, 170, 40, 255}, 0.10f));
+        DrawCircle((int)laranjas[i].x, (int)laranjas[i].y, 3.2f, Fade((Color){255, 170, 40, 255}, 0.9f));
+    }
+
+    /* silhuetas de colinas/nuvens */
+    Color m1 = (Color){12, 19, 40, 255}, m2 = (Color){16, 25, 50, 255};
+    DrawEllipse(88, 600, 130, 175, m1);
+    DrawEllipse(195, 650, 75, 90, m2);
+    DrawEllipse(1192, 600, 130, 175, m1);
+    DrawEllipse(1105, 655, 85, 85, m2);
+}
+
+static void botaoMenu(Rectangle rc, const char *t, Color base, bool sel)
+{
+    float ex = sel ? 4.0f : 0.0f;
+    Rectangle r = {rc.x - ex, rc.y - ex * 0.5f, rc.width + 2.0f * ex, rc.height + ex};
+    Color contorno = sel ? (Color){196, 210, 218, 255} : ColorBrightness(base, -0.5f);
+    Rectangle face = {r.x, r.y, r.width, r.height - 4.0f};
+
+    DrawRectangleRounded((Rectangle){r.x + 1, r.y + 5, r.width, r.height}, 0.5f, 10, Fade(BLACK, 0.45f));
+    DrawRectangleRounded((Rectangle){r.x - 2, r.y - 2, r.width + 4, r.height + 4}, 0.5f, 10, contorno);
+    DrawRectangleRounded(r, 0.5f, 10, ColorBrightness(base, -0.28f));
+    DrawRectangleRounded(face, 0.5f, 10, sel ? ColorBrightness(base, 0.08f) : base);
+    DrawRectangleRounded((Rectangle){face.x + 8, face.y + 3, face.width - 16, face.height * 0.36f}, 0.5f, 10,
+                         Fade(WHITE, 0.14f));
+
+    float cy = face.y + face.height * 0.5f;
+    textoFonte(fCorpo, t, face.x + face.width * 0.5f, cy + 1, 22.0f, 0.9f, CENTRO_CORPO, Fade(BLACK, 0.30f));
+    textoFonte(fCorpo, t, face.x + face.width * 0.5f, cy, 22.0f, 0.9f, CENTRO_CORPO, WHITE);
+}
+
 static void desenharMenu(void)
 {
     float t = (float)GetTime();
-
-    for (int i = 0; i < 46; i++) {
-        float seed = i * 37.1f;
-        float x = fmodf(seed * 13.7f, (float)W);
-        float vel = 18.0f + (i % 7) * 7.0f;
-        float y = H + 20.0f - fmodf(t * vel + seed * 9.3f, H + 40.0f);
-        float tam = 1.5f + (i % 3);
-        float piscar = 0.35f + 0.35f * sinf(t * 3.0f + i);
-        DrawCircle((int)(x + sinf(t + i) * 8.0f), (int)y, tam, Fade((Color){255, 220, 90, 255}, piscar));
-    }
-
     float pulso = 0.5f + 0.5f * sinf(t * 2.0f);
-    textoCentro("VOLTERRA", 643, 103, 92, Fade(BLACK, 0.6f));
-    textoCentro("VOLTERRA", 640, 100, 92, Fade((Color){255, 150, 30, 255}, 0.25f + 0.25f * pulso));
-    textoCentro("VOLTERRA", 640, 98, 92, (Color){255, 215, 60, 255});
-    textoCentro("VOLTERRA", 640, 100, 92, (Color){255, 215, 60, 255});
+    Color amarelo = (Color){255, 215, 60, 255};
 
-    DrawRectangle(440, 198, 400, 3, Fade((Color){60, 90, 130, 255}, 0.8f));
-    float hx = 440.0f + fmodf(t * 220.0f, 400.0f);
-    DrawRectangleGradientH((int)fmaxf(440.0f, hx - 60), 198, 60, 3, Fade(YELLOW, 0.0f), YELLOW);
+    fundoMenu(t);
 
-    textoCentro("Gerencie a energia do Brasil", 640, 210, 26, RAYWHITE);
-    textoCentro("Evite blackouts. Evite sobrecargas. Mantenha o pais ligado.", 640, 242, 16, LIGHTGRAY);
+    /* titulo: anel de orbita, sombra, brilho pulsante e texto */
+    const char *tit = "VOLTERRA";
+    float tamT = fontesProprias ? 60.0f / CAP_TITULO : 80.0f;
+    float w0 = MeasureTextEx(fTitulo, tit, tamT, 0.0f).x;
+    float espT = (487.0f - w0) / 8.0f;
+    if (espT < 0.0f) espT = 0.0f;
 
-    caixa((Rectangle){470, 268, 340, 322}, 0.06f, (Color){12, 22, 42, 235},
-          Fade((Color){255, 215, 60, 255}, 0.55f + 0.2f * pulso));
-    desenharBotao(btnNovo, "Novo Jogo", (Color){40, 140, 90, 255});
-    desenharBotao(btnFases, "Escolher fase", (Color){120, 90, 170, 255});
-    desenharBotao(btnRanque, "Ranque", (Color){190, 140, 30, 255});
-    desenharBotao(btnComo, "Como jogar", (Color){40, 100, 180, 255});
-    desenharBotao(btnSair, "Sair", (Color){160, 55, 55, 255});
+    orbita(433.0f, 121.0f, 82.0f, 33.0f, -0.26f, 3.14159f, 0.3f * 3.14159f, (Color){110, 140, 190, 255});
 
-    if (segredoOk) textoCentro("* Conquista secreta desbloqueada *", 640, 600, 15, (Color){255, 215, 60, 255});
+    textoFonte(fTitulo, tit, 643, 119, tamT, espT, CENTRO_TITULO, Fade(BLACK, 0.55f));
+    const float dx[4] = {-2, 2, 0, 0}, dy[4] = {0, 0, -2, 2};
+    for (int i = 0; i < 4; i++)
+        textoFonte(fTitulo, tit, 640 + dx[i], 116 + dy[i], tamT, espT, CENTRO_TITULO,
+                   Fade((Color){255, 150, 30, 255}, 0.10f + 0.12f * pulso));
+    textoFonte(fTitulo, tit, 640, 116, tamT, espT, CENTRO_TITULO, amarelo);
 
-    for (int i = 0; i < 5; i++) icone(i, 640.0f + (i - 2) * 76.0f, 650.0f, t, 1.0f);
-    textoCentro("ENTER: novo jogo   |   P ou ESC: pausa e volume durante a partida", 640, 690, 14,
-                (Color){120, 140, 170, 255});
+    /* subtitulo, com linhas decorativas nas laterais */
+    const char *sub1 = "Gerencie a energia do Brasil";
+    const char *sub2 = "Evite blackouts. Evite mais prejuízos. Fortaleça o país ligado.";
+    if (!fontesProprias) sub2 = "Evite blackouts. Evite mais prejuizos. Fortaleca o pais ligado.";
+
+    DrawRectangleGradientH(354, 181, 82, 2, Fade((Color){110, 140, 190, 255}, 0.0f), Fade((Color){110, 140, 190, 255}, 0.7f));
+    DrawRectangleGradientH(844, 181, 82, 2, Fade((Color){110, 140, 190, 255}, 0.7f), Fade((Color){110, 140, 190, 255}, 0.0f));
+
+    float tam1 = tamPorLargura(fCorpo, sub1, 288.0f, 0.02f);
+    float tam2 = tamPorLargura(fCorpoMed, sub2, 479.0f, 0.02f);
+    textoFonte(fCorpo, sub1, 640, 180, tam1, tam1 * 0.02f, CENTRO_CORPO, WHITE);
+    textoFonte(fCorpoMed, sub2, 640, 209, tam2, tam2 * 0.02f, CENTRO_CORPO, (Color){225, 232, 245, 255});
+
+    /* painel com moldura amarela */
+    Rectangle pn = {456, 240, 368, 305};
+    for (int i = 3; i >= 1; i--)
+        DrawRectangleRounded((Rectangle){pn.x - i * 5.0f, pn.y - i * 5.0f, pn.width + i * 10.0f, pn.height + i * 10.0f},
+                             0.17f, 12, Fade(amarelo, 0.025f + 0.01f * pulso));
+    DrawRectangleRounded((Rectangle){pn.x - 2, pn.y - 2, pn.width + 4, pn.height + 4}, 0.17f, 12,
+                         Fade((Color){250, 200, 50, 255}, 0.75f + 0.2f * pulso));
+    DrawRectangleRounded(pn, 0.17f, 12, (Color){15, 22, 41, 255});
+
+    botaoMenu(btnNovo,   "Novo Jogo",     (Color){34, 200, 130, 255}, menuSel == 0);
+    botaoMenu(btnFases,  "Escolher Fase", (Color){128, 88, 208, 255}, menuSel == 1);
+    botaoMenu(btnRanque, "Ranque",        (Color){245, 176, 20, 255}, menuSel == 2);
+    botaoMenu(btnComo,   "Como jogar",    (Color){44, 134, 230, 255}, menuSel == 3);
+    botaoMenu(btnSair,   "Sair",          (Color){226, 72, 72, 255},  menuSel == 4);
+
+    if (segredoOk)
+        textoFonte(fCorpoMed, "* Conquista secreta desbloqueada *",
+                   640, 559, 14.0f, 0.3f, CENTRO_CORPO, amarelo);
+
+    /* icones das fontes de energia em circulos */
+    for (int i = 0; i < 5; i++)
+        iconeMenu(i, 640.0f + (float)(i - 2) * 103.0f, 613.0f, t, 1.75f,
+                  (Color){17, 24, 46, 255}, (Color){52, 66, 98, 255});
+
+    /* rodape */
+    char rodape[128];
+    snprintf(rodape, sizeof(rodape), "Utilize as setas para navegar%sPressione Enter para selecionar",
+             fontesProprias ? "  \xE2\x80\xA2  " : "  |  ");
+    float tamR = tamPorLargura(fCorpoMed, rodape, 459.0f, 0.02f);
+    if (tamR > 20.0f) tamR = 20.0f;
+    textoFonte(fCorpoMed, rodape, 640, 679, tamR, tamR * 0.02f, CENTRO_CORPO, (Color){140, 155, 185, 255});
+}
+
+/*  Tela "Escolher Fase"  */
+
+/* Converte coordenadas do Figma (1600x835) para a janela do jogo (1280x720). */
+#define FX(x) (640.0f + ((x) - 800.0f) * 0.862f)
+#define FY(y) ((y) * 0.862f)
+
+/* Textos de cada missao (edite aqui para mudar nomes e descricoes). */
+static const char *missaoNome[FASES] = {
+    "Primeira carga",
+    "Rede em expansão",
+    "Pico de consumo",
+    "Tempestade na rede",
+    "Rede nacional"
+};
+static const char *missaoDesc[FASES] = {
+    "Reative os primeiros polos de energia.",
+    "Conecte uma nova região e mantenha o equilíbrio.",
+    "Equilibre as cinco regiões nos horários de pico.",
+    "Vários eventos ao mesmo tempo: evite os blackouts.",
+    "O desafio final: mantenha o país inteiro ligado."
+};
+
+static Vector2 fig(float x, float y)
+{
+    return (Vector2){FX(x), FY(y)};
+}
+
+/* Texto alinhado a esquerda em x; cy e o centro das letras maiusculas. */
+static void textoEsq(Font f, const char *s, float x, float cy, float tam, float esp, float centro, Color c)
+{
+    if (!fontesProprias) centro = 0.5f;
+    DrawTextEx(f, s, (Vector2){roundf(x), roundf(cy - centro * tam)}, tam, esp, c);
+}
+
+static void setaLinhas(float cx, float cy, float s, bool esquerda, Color c)
+{
+    float d = esquerda ? -1.0f : 1.0f;
+    DrawLineEx((Vector2){cx - d * s, cy}, (Vector2){cx + d * s, cy}, 1.6f, c);
+    DrawLineEx((Vector2){cx + d * s, cy}, (Vector2){cx + d * s * 0.2f, cy - s * 0.75f}, 1.6f, c);
+    DrawLineEx((Vector2){cx + d * s, cy}, (Vector2){cx + d * s * 0.2f, cy + s * 0.75f}, 1.6f, c);
+}
+
+static void teclaRotulo(Rectangle rc)
+{
+    DrawRectangleRounded((Rectangle){rc.x - 1, rc.y - 1, rc.width + 2, rc.height + 2}, 0.3f, 8, (Color){52, 66, 98, 255});
+    DrawRectangleRounded(rc, 0.3f, 8, (Color){20, 28, 50, 255});
+}
+
+/* Trilha tracejada ondulada que liga as fases (curva Catmull-Rom). */
+static void trilhaFases(float t)
+{
+    static const Vector2 pts[] = {
+        {452, 424}, {500, 440}, {560, 455}, {625, 458}, {690, 444}, {745, 414}, {795, 391},
+        {850, 377}, {905, 371}, {945, 376}, {990, 388}, {1040, 415}, {1100, 455}, {1160, 490},
+        {1205, 485}, {1245, 462}, {1268, 425}, {1278, 402}
+    };
+    const int n = (int)(sizeof(pts) / sizeof(pts[0]));
+    const float periodo = 13.0f, tracoLen = 7.0f;
+    float desloc = fmodf(t * 10.0f, periodo);
+    float acum = 0.0f;
+    Color cor = Fade((Color){150, 165, 195, 255}, 0.6f);
+    Vector2 ant = fig(pts[0].x, pts[0].y);
+
+    for (int i = 0; i < n - 1; i++) {
+        int ia = i > 0 ? i - 1 : 0;
+        int id = i + 2 < n ? i + 2 : n - 1;
+        Vector2 p0 = fig(pts[ia].x, pts[ia].y), p1 = fig(pts[i].x, pts[i].y);
+        Vector2 p2 = fig(pts[i + 1].x, pts[i + 1].y), p3 = fig(pts[id].x, pts[id].y);
+
+        for (int s = 1; s <= 12; s++) {
+            float u = (float)s / 12.0f, u2 = u * u, u3 = u2 * u;
+            Vector2 p;
+            p.x = 0.5f * ((2.0f * p1.x) + (-p0.x + p2.x) * u + (2.0f * p0.x - 5.0f * p1.x + 4.0f * p2.x - p3.x) * u2 +
+                          (-p0.x + 3.0f * p1.x - 3.0f * p2.x + p3.x) * u3);
+            p.y = 0.5f * ((2.0f * p1.y) + (-p0.y + p2.y) * u + (2.0f * p0.y - 5.0f * p1.y + 4.0f * p2.y - p3.y) * u2 +
+                          (-p0.y + 3.0f * p1.y - 3.0f * p2.y + p3.y) * u3);
+            if (fmodf(acum + desloc, periodo) < tracoLen) DrawLineEx(ant, p, 2.0f, cor);
+            acum += dist(ant, p);
+            ant = p;
+        }
+    }
+}
+
+static void noFase(int i, bool sel, float pulso)
+{
+    static const float descePilula[FASES] = {54.0f, 59.0f, 59.0f, 59.0f, 60.0f};
+    Color amarelo = (Color){255, 215, 60, 255};
+    Vector2 c = centroFase(i);
+    float r = sel ? 41.0f : 35.0f;
+
+    /* corpo do no */
+    if (sel) {
+        DrawCircle((int)c.x, (int)c.y, r + 16.0f, Fade(amarelo, 0.04f + 0.03f * pulso));
+        DrawCircle((int)c.x, (int)c.y, r + 9.0f, Fade(amarelo, 0.06f + 0.03f * pulso));
+        DrawRing(c, r + 5.0f, r + 6.5f, 0.0f, 360.0f, 64, Fade(amarelo, 0.8f));
+    }
+    DrawCircleGradient((int)c.x, (int)c.y, r, (Color){40, 58, 102, 255}, (Color){15, 23, 46, 255});
+    DrawRing(c, r - 1.5f, r, 0.0f, 360.0f, 64, sel ? Fade(amarelo, 0.9f) : (Color){72, 92, 142, 255});
+
+    /* ponto satelite no canto superior direito */
+    DrawCircle((int)(c.x + (r + 3.0f) * 0.7071f), (int)(c.y - (r + 3.0f) * 0.7071f), 2.4f,
+               sel ? (Color){255, 170, 40, 255} : (Color){130, 160, 225, 255});
+
+    /* "FASE" e numero */
+    textoFonte(fPeq, "FASE", c.x, c.y - 0.42f * r, 8.5f, 1.4f, CENTRO_CORPO, (Color){150, 165, 200, 255});
+    float tamN = sel ? 41.0f : 34.0f;
+    textoFonte(fNum, TextFormat("%d", i + 1), c.x, c.y + 0.10f * r, tamN, 0.0f, CENTRO_TITULO,
+               sel ? WHITE : (Color){232, 238, 250, 255});
+
+    /* pilula com a quantidade de regioes */
+    Vector2 pc = {c.x, c.y + descePilula[i]};
+    Rectangle pr = {pc.x - 31.0f, pc.y - 10.0f, 62.0f, 20.0f};
+    DrawRectangleRounded((Rectangle){pr.x - 1, pr.y - 1, pr.width + 2, pr.height + 2}, 0.5f, 10,
+                         sel ? Fade(amarelo, 0.5f) : (Color){40, 52, 80, 255});
+    DrawRectangleRounded(pr, 0.5f, 10, (Color){13, 20, 38, 255});
+    textoFonte(fPeq, TextFormat("%d regiões", regioesNaFase(i + 1)), pc.x, pc.y, 9.0f, 0.5f, CENTRO_CORPO,
+               sel ? amarelo : (Color){150, 165, 195, 255});
 }
 
 static void desenharFases(void)
 {
-    textoCentro("ESCOLHER FASE", 640, 110, 56, (Color){255, 215, 60, 255});
-    textoCentro("A partida comeca na fase escolhida, com 3 vidas e 0 pontos.", 640, 200, 20, LIGHTGRAY);
+    float t = (float)GetTime();
+    float pulso = 0.5f + 0.5f * sinf(t * 2.0f);
+    Color amarelo = (Color){255, 215, 60, 255};
+    Color linha = (Color){110, 140, 190, 255};
+
+    fundoMenu(t);
+
+    /* aneis de orbita bem discretos */
+    DrawCircleLines((int)FX(375), (int)FY(345), 256.0f * 0.862f, Fade((Color){70, 95, 140, 255}, 0.28f));
+    DrawCircleLines((int)FX(1330), (int)FY(583), 217.0f * 0.862f, Fade((Color){70, 95, 140, 255}, 0.22f));
+    Vector2 pt = fig(461, 104);
+    DrawCircle((int)pt.x, (int)pt.y, 8.0f, Fade((Color){255, 170, 40, 255}, 0.10f));
+    DrawCircle((int)pt.x, (int)pt.y, 3.2f, Fade((Color){255, 170, 40, 255}, 0.9f));
+
+    /* botao MENU (canto superior esquerdo) */
+    Rectangle bm = btnVoltarFas;
+    bool hm = hover(bm);
+    float mcy = bm.y + bm.height * 0.5f;
+    DrawRectangleRounded((Rectangle){bm.x - 1, bm.y - 1, bm.width + 2, bm.height + 2}, 0.5f, 12,
+                         hm ? Fade(amarelo, 0.7f) : (Color){48, 62, 92, 255});
+    DrawRectangleRounded(bm, 0.5f, 12, hm ? (Color){24, 34, 60, 255} : (Color){16, 24, 44, 255});
+    DrawCircle((int)(bm.x + 19.0f), (int)mcy, 11.0f, (Color){255, 200, 40, 255});
+    setaLinhas(bm.x + 19.0f, mcy, 4.5f, true, (Color){30, 24, 8, 255});
+    textoEsq(fCorpo, "MENU", bm.x + 38.0f, mcy, 11.5f, 1.6f, CENTRO_CORPO, WHITE);
+
+    /* "CENTRAL DE OPERACOES" com linhas laterais */
+    DrawRectangle((int)FX(678), (int)FY(169), (int)(26.0f * 0.862f), 1, Fade(linha, 0.7f));
+    DrawRectangle((int)FX(896), (int)FY(169), (int)(26.0f * 0.862f), 1, Fade(linha, 0.7f));
+    const char *olho = "CENTRAL DE OPERAÇÕES";
+    float tamO = tamPorLargura(fPeq, olho, 144.0f, 0.2f);
+    textoFonte(fPeq, olho, 640, FY(169), tamO, tamO * 0.2f, CENTRO_CORPO, (Color){105, 125, 165, 255});
+
+    /* titulo */
+    const char *tit = "ESCOLHER FASE";
+    float tamT = fontesProprias ? 46.0f / CAP_TITULO : 64.0f;
+    float w0 = MeasureTextEx(fTitulo, tit, tamT, 0.0f).x;
+    float espT = (636.0f - w0) / 13.0f;
+    if (espT < 0.0f) espT = 0.0f;
+    float ty = FY(220);
+    textoFonte(fTitulo, tit, 643, ty + 3, tamT, espT, CENTRO_TITULO, Fade(BLACK, 0.55f));
+    const float dx[4] = {-2, 2, 0, 0}, dy[4] = {0, 0, -2, 2};
+    for (int i = 0; i < 4; i++)
+        textoFonte(fTitulo, tit, 640 + dx[i], ty + dy[i], tamT, espT, CENTRO_TITULO,
+                   Fade((Color){255, 150, 30, 255}, 0.10f + 0.12f * pulso));
+    textoFonte(fTitulo, tit, 640, ty, tamT, espT, CENTRO_TITULO, amarelo);
+
+    /* subtitulo */
+    const char *sub = "Escolha um ponto da rede para iniciar sua próxima missão.";
+    float tamS = tamPorLargura(fCorpoMed, sub, 420.0f, 0.02f);
+    textoFonte(fCorpoMed, sub, 640, FY(285), tamS, tamS * 0.02f, CENTRO_CORPO, (Color){190, 200, 222, 255});
+
+    /* trilha e nos das fases (o selecionado e desenhado por ultimo) */
+    trilhaFases(t);
     for (int i = 0; i < FASES; i++) {
-        Rectangle rc = btnFase(i);
-        bool h = hover(rc);
-        caixa(rc, 0.15f, h ? (Color){50, 80, 130, 255} : (Color){28, 44, 76, 255}, h ? WHITE : (Color){90, 120, 170, 255});
-        textoCentro(TextFormat("%d", i + 1), (int)(rc.x + rc.width / 2), (int)rc.y + 12, 48, WHITE);
-        textoCentro(TextFormat("%d regioes", regioesNaFase(i + 1)), (int)(rc.x + rc.width / 2), (int)rc.y + 70, 16, LIGHTGRAY);
+        if (i != faseSel) noFase(i, false, pulso);
     }
-    desenharBotao(btnVoltarFas, "Voltar", (Color){160, 55, 55, 255});
+    noFase(faseSel, true, pulso);
+
+    /* cartao da missao */
+    Rectangle cartao = {FX(458), FY(557), 685.0f * 0.862f, 100.0f * 0.862f};
+    DrawRectangleRounded((Rectangle){cartao.x, cartao.y + 5, cartao.width, cartao.height}, 0.4f, 12, Fade(BLACK, 0.35f));
+    DrawRectangleRounded((Rectangle){cartao.x - 1.5f, cartao.y - 1.5f, cartao.width + 3, cartao.height + 3}, 0.4f, 12,
+                         (Color){48, 62, 94, 255});
+    DrawRectangleRounded(cartao, 0.4f, 12, (Color){17, 25, 46, 255});
+
+    textoFonte(fPeq, "MISSÃO", FX(516), FY(591), 8.5f, 1.4f, CENTRO_CORPO, (Color){125, 140, 175, 255});
+    textoFonte(fNum, TextFormat("%02d", faseSel + 1), FX(516), FY(615), 26.0f, 0.0f, CENTRO_TITULO, amarelo);
+    DrawRectangle((int)FX(556), (int)FY(575), 1, (int)(65.0f * 0.862f), (Color){45, 58, 88, 255});
+
+    textoEsq(fPeq, TextFormat("%d REGIÕES CONECTADAS", regioesNaFase(faseSel + 1)), FX(575), FY(580), 8.5f, 1.3f,
+             CENTRO_CORPO, (Color){120, 135, 170, 255});
+    textoEsq(fCorpo, missaoNome[faseSel], FX(575), FY(604), 17.0f, 0.3f, CENTRO_CORPO, WHITE);
+    textoEsq(fCorpoMed, missaoDesc[faseSel], FX(575), FY(630), 11.5f, 0.2f, CENTRO_CORPO, (Color){150, 165, 195, 255});
+
+    /* botao "Iniciar fase" */
+    Rectangle bi = btnIniciarFase;
+    bool hi = hover(bi);
+    Color ouro = hi ? (Color){255, 196, 50, 255} : (Color){247, 181, 36, 255};
+    Rectangle face = {bi.x, bi.y, bi.width, bi.height - 4.0f};
+    DrawRectangleRounded((Rectangle){bi.x + 1, bi.y + 5, bi.width, bi.height}, 0.5f, 12, Fade(BLACK, 0.4f));
+    DrawRectangleRounded(bi, 0.5f, 12, ColorBrightness(ouro, -0.30f));
+    DrawRectangleRounded(face, 0.5f, 12, ouro);
+    DrawRectangleRounded((Rectangle){face.x + 8, face.y + 3, face.width - 16, face.height * 0.38f}, 0.5f, 10,
+                         Fade(WHITE, 0.22f));
+    textoEsq(fCorpo, "Iniciar fase", face.x + 16.0f, face.y + face.height * 0.5f, 13.5f, 0.3f, CENTRO_CORPO,
+             (Color){38, 28, 8, 255});
+    DrawCircle((int)(face.x + face.width - 21.0f), (int)(face.y + face.height * 0.5f), 11.0f, (Color){22, 27, 50, 255});
+    setaLinhas(face.x + face.width - 21.0f, face.y + face.height * 0.5f, 4.5f, false, WHITE);
+
+    /* dicas de teclado */
+    float hy = FY(687);
+    Color dica = (Color){120, 135, 170, 255};
+    Rectangle k1 = {FX(702), hy - 9.5f, 39.0f * 0.862f, 19.0f};
+    teclaRotulo(k1);
+    setaLinhas(k1.x + 9.5f, hy, 3.6f, true, (Color){190, 200, 225, 255});
+    setaLinhas(k1.x + 23.5f, hy, 3.6f, false, (Color){190, 200, 225, 255});
+    textoEsq(fCorpoMed, "Navegar", FX(750), hy, 10.0f, 0.2f, CENTRO_CORPO, dica);
+    DrawCircle((int)FX(805), (int)hy, 1.6f, dica);
+    Rectangle k2 = {FX(815), hy - 9.5f, 45.0f * 0.862f, 19.0f};
+    teclaRotulo(k2);
+    textoFonte(fPeq, "Enter", k2.x + k2.width * 0.5f, hy, 9.0f, 0.3f, CENTRO_CORPO, (Color){210, 218, 235, 255});
+    textoEsq(fCorpoMed, "Iniciar", FX(868), hy, 10.0f, 0.2f, CENTRO_CORPO, dica);
 }
+
 
 static void desenharAjuda(void)
 {
@@ -445,8 +832,8 @@ static void desenharFim(void)
 
     if (podeSecreta) {
         float p = 0.5f + 0.5f * sinf((float)GetTime() * 4.0f);
-        DrawRectangleRoundedLines((Rectangle){btnSecreta.x - 6, btnSecreta.y - 6, btnSecreta.width + 12, btnSecreta.height + 12},
-                                  0.3f, 8, Fade((Color){255, 215, 60, 255}, 0.4f + 0.6f * p));
+        DrawRectangleRounded((Rectangle){btnSecreta.x - 6, btnSecreta.y - 6, btnSecreta.width + 12, btnSecreta.height + 12},
+                             0.3f, 8, Fade((Color){255, 215, 60, 255}, 0.18f + 0.3f * p));
         desenharBotao(btnSecreta, "Fase secreta", (Color){150, 110, 20, 255});
     }
 }
@@ -510,14 +897,9 @@ static void desenharEngrenagem(void)
         0.25f, 8, Fade(BLACK, 0.45f)
     );
 
-    DrawRectangleRounded(
-        rc,
-        0.25f, 8,
-        h ? (Color){55, 75, 105, 255} : (Color){25, 38, 60, 245}
-    );
-
-    DrawRectangleRoundedLines(
-        rc, 0.25f, 8,
+    caixa(
+        rc, 0.25f,
+        h ? (Color){55, 75, 105, 255} : (Color){25, 38, 60, 255},
         h ? WHITE : (Color){100, 130, 170, 255}
     );
 
@@ -536,9 +918,6 @@ void desenhar(void)
 
     switch (tela) {
         case TELA_MENU:
-            desenharFundoMaritimo();
-            desenharMapa();
-            DrawRectangle(0, 0, W, H, Fade(BLACK, 0.55f));
             desenharMenu();
             break;
 
@@ -548,7 +927,6 @@ void desenhar(void)
             break;
 
         case TELA_FASES:
-            desenharFundoMaritimo();
             desenharFases();
             break;
 
