@@ -18,9 +18,9 @@ int abasVisiveis(void)
 
 Rectangle barraVol(int i) { return (Rectangle){480, 548.0f + i * 50.0f, 300, 14}; }
 
-float projX(float lon) { return 285.0f + (lon + 74.0f) * 15.8f; }
+float projX(float lon) { return 332.0f + (lon + 74.0f) * 13.4f; }
 
-float projY(float lat) { return 90.0f + (5.5f - lat) * 15.8f; }
+float projY(float lat) { return 90.0f + (5.5f - lat) * 13.4f; }
 
 float velFase(void)       { return secreta ? 0.5f : 0.75f + 0.15f * (fase - 1); }
 

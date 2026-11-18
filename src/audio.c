@@ -212,9 +212,9 @@ static void garantirMusica(int i)
     mus[i] = compor(tr->raiz, tr->tipo, 16, tr->bpm, tr->arp, tr->prob, tr->seed, tr->vol);
 
     char arq[64];
-    if (i == 0) snprintf(arq, sizeof(arq), "assets/musica_menu.wav");
+    if (i == 0) snprintf(arq, sizeof(arq), "assets/menu.wav");
     else if (i == NUM_MUS - 1) snprintf(arq, sizeof(arq), "assets/fasesecreta.wav");
-    else snprintf(arq, sizeof(arq), "assets/fasesnormal.wav", i);
+    else snprintf(arq, sizeof(arq), "assets/fasesnormal.wav");
     mus[i] = carregarOuGerar(arq, mus[i]);
     musPronta[i] = true;
 }

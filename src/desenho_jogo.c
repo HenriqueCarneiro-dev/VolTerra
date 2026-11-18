@@ -1,3 +1,4 @@
+#include <string.h>
 #include "tipos.h"
 #include "globais.h"
 #include "dados.h"
@@ -429,16 +430,54 @@ static void desenharHUD(void)
 static void desenharBanner(void)
 {
     if (msgT <= 0) return;
-    Color base[4] = {{40, 110, 200, 255}, {235, 150, 30, 255}, {40, 170, 100, 255}, {210, 50, 50, 255}};
+    Color base[4] = {{40, 140, 230, 255}, {255, 170, 40, 255}, {50, 200, 120, 255}, {235, 60, 60, 255}};
     Color c = base[corMsg & 3];
     float a = msgT < 0.6f ? msgT / 0.6f : 1.0f;
-    Rectangle b = {340, 200, 600, 90};
-    DrawRectangleRounded((Rectangle){b.x + 3, b.y + 6, b.width, b.height}, 0.2f, 8, Fade(BLACK, 0.6f * a));
-    caixa(b, 0.2f, Fade(ColorBrightness(c, -0.55f), 0.98f * a), Fade(c, a));
-    textoCentro(tituloMsg, W / 2, 212, 26, Fade(WHITE, a));
-    int tam = 17;
-    while (tam > 11 && MeasureText(msg, tam) > 570) tam--;
-    textoCentro(msg, W / 2, 250, tam, Fade((Color){255, 240, 210, 255}, a));
+
+    /* Rodape, sob o mapa (entre o painel esquerdo e o painel direito) */
+    Rectangle b = {290, H - 86, 630, 74};
+
+    /* brilho externo (camadas translucidas) + borda colorida + fundo escuro */
+    for (int g = 4; g >= 1; g--)
+        DrawRectangleRounded((Rectangle){b.x - g * 2, b.y - g * 2, b.width + g * 4, b.height + g * 4},
+                             0.2f, 8, Fade(c, 0.05f * a));
+    caixa(b, 0.2f, Fade((Color){10, 16, 30, 255}, 0.96f * a), Fade(c, a));
+    DrawRectangleRounded(b, 0.2f, 8, Fade(ColorBrightness(c, -0.75f), 0.35f * a));
+
+    /* icone a esquerda: triangulo de alerta (avisos) ou circulo "i" (info) */
+    float ix = b.x + 42, iy = b.y + b.height / 2;
+    if ((corMsg & 3) == 1 || (corMsg & 3) == 3) {
+        Vector2 p1 = {ix, iy - 26}, p2 = {ix - 28, iy + 22}, p3 = {ix + 28, iy + 22};
+        DrawTriangle(p1, p2, p3, Fade(c, 0.35f * a));
+        DrawTriangleLines(p1, p2, p3, Fade(c, a));
+        textoCentro("!", (int)ix, (int)iy - 8, 28, Fade(WHITE, a));
+    } else {
+        DrawCircleV((Vector2){ix, iy}, 24, Fade(c, 0.35f * a));
+        DrawCircleLines((int)ix, (int)iy, 24, Fade(c, a));
+        textoCentro("i", (int)ix, (int)iy - 12, 24, Fade(WHITE, a));
+    }
+
+    /* titulo (colorido) e mensagem (ate 2 linhas), alinhados a esquerda */
+    float tx = b.x + 88, maxw = b.width - 88 - 18;
+    DrawText(tituloMsg, (int)tx, (int)b.y + 8, 22, Fade(ColorBrightness(c, 0.25f), a));
+    Color ct = Fade((Color){235, 240, 250, 255}, a);
+    const int tam = 15;
+    if (MeasureText(msg, tam) <= maxw) {
+        DrawText(msg, (int)tx, (int)b.y + 38, tam, ct);
+    } else {
+        char l1[200], l2[200];
+        snprintf(l1, sizeof(l1), "%s", msg);
+        int corte = (int)strlen(l1);
+        while (corte > 0 && MeasureText(l1, tam) > maxw) {
+            while (corte > 0 && l1[corte - 1] != ' ') corte--;
+            if (corte > 0) l1[--corte] = '\0';
+        }
+        if (corte <= 0) { snprintf(l1, sizeof(l1), "%s", msg); corte = (int)strlen(l1); }
+        snprintf(l2, sizeof(l2), "%s", msg + corte + (msg[corte] == ' ' ? 1 : 0));
+        while (strlen(l2) > 3 && MeasureText(l2, tam) > maxw) l2[strlen(l2) - 1] = '\0';
+        DrawText(l1, (int)tx, (int)b.y + 36, tam, ct);
+        DrawText(l2, (int)tx, (int)b.y + 54, tam, ct);
+    }
     if (corMsg == 1 && msgT > 4.2f)
         DrawRectangleLinesEx((Rectangle){0, 0, W, H}, 8, Fade((Color){255, 170, 40, 255}, (msgT - 4.2f) / 0.8f));
 }
