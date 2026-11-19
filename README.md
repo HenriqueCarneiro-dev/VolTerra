@@ -1,6 +1,6 @@
 # VolTerra
 
-**VolTerra** é um jogo de estratégia e gerenciamento de energia desenvolvido em C com a biblioteca [raylib](https://www.raylib.com/).
+**VolTerra** é um jogo de estratégia e gerenciamento de energia desenvolvido em C com a biblioteca [raylib](https://www.raylib.com/) para o curso de Programação Imperativa Funcional (PIF).
 
 O jogador mantém a estabilidade da rede elétrica do Brasil, ajustando a produção de regiões, transferindo energia entre elas e respondendo a eventos aleatórios. O objetivo é equilibrar geração e consumo durante as fases, evitando tanto blackout quanto sobrecarga.
 
@@ -138,14 +138,6 @@ A partida é atualizada principalmente por `src/jogo.c`:
 - `src/regioes.c` define a representação geográfica das regiões e da grade usada pelo modo secreto.
 
 A interface usa uma textura virtual de 1280×720 e é redimensionada com proporção preservada para a janela real.
-
-## Gerar documentação consolidada
-
-O script Python percorre os arquivos suportados do projeto e gera `DOCUMENTACAO_COMPLETA.txt`:
-
-```bash
-python src/gerar_documentacao.py
-```
 
 ## Observações
 
