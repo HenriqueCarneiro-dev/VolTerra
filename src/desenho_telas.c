@@ -832,12 +832,13 @@ static void desenharMini(void)
 
     const char *ins = "";
     switch (mini.tipo) {
-        case MINI_FIOS:      ins = "Arraste cada fio da esquerda ate a ponta da mesma cor, a direita."; break;
+        case MINI_FIOS:      ins = "Raquete: mouse ou A/D/setas. Acerte os 4 terminais; 3 quedas = falha."; break;
         case MINI_DISJUNTOR: ins = "Clique nos disjuntores em ordem: 1, 2, 3, 4, 5, 6. Erro reinicia a sequencia."; break;
-        case MINI_GERADOR:   ins = "Gire o gerador: clique no botao ou aperte ESPACO rapido ate encher 100%."; break;
+        case MINI_GERADOR:   ins = "Coletor: mouse ou WASD/setas. Capture 8 celulas de energia."; break;
         case MINI_TURBINAS:  ins = "Clique nas turbinas para esfria-las. Nao deixe nenhuma chegar a 100%!"; break;
         case MINI_SINCRONIA: ins = "Pare o marcador na zona verde (ESPACO ou botao). Acerte 3 vezes."; break;
-        case MINI_FAISCAS:   ins = "Desvie das faiscas com o mouse ate o tempo acabar. 3 toques = falha."; break;
+        case MINI_ALVOS:     ins = "Disco: mouse ou WASD/setas. Aterre 4 nucleos, acertando 2 vezes cada."; break;
+        case MINI_FAISCAS:   ins = "Mouse ou WASD/setas: desvie das faiscas ate o tempo acabar. 3 toques = falha."; break;
         default:             ins = "Desligue o disjuntor ACESO antes que ele apague. Faca 8 acertos."; break;
     }
     textoCentro(ins, 640, 202, 18, LIGHTGRAY);
@@ -850,22 +851,26 @@ static void desenharMini(void)
 
     Vector2 m = mouseVirtual();
     switch (mini.tipo) {
-        case MINI_FIOS:
-            DrawText("Origem", 400, 262, 18, LIGHTGRAY);
-            DrawText("Destino", 810, 262, 18, LIGHTGRAY);
+        case MINI_FIOS: {
+            Rectangle a = arenaFaiscas();
+            caixa(a, 0.03f, (Color){10, 16, 30, 255}, mini.flash > 0 ? (Color){255, 80, 80, 255} : (Color){90, 120, 170, 255});
             for (int i = 0; i < 4; i++) {
-                if (mini.destino[i] >= 0)
-                    DrawLineEx(noEsq(i), noDir(mini.destino[i]), 7.0f, fios[mini.ordem[i]]);
+                Vector2 alvo = {420.0f + 140.0f * i, a.y + 58.0f};
+                DrawCircleV(alvo, 28.0f, mini.on[i] ? (Color){60, 210, 130, 255} : (Color){40, 55, 80, 255});
+                DrawCircleLines((int)alvo.x, (int)alvo.y, 28.0f, mini.on[i] ? WHITE : (Color){100, 150, 200, 255});
+                textoCentro(mini.on[i] ? "OK" : TextFormat("NO %d", i + 1), (int)alvo.x, (int)alvo.y - 10, 16, WHITE);
             }
-            if (mini.arrasta >= 0) DrawLineEx(noEsq(mini.arrasta), m, 7.0f, fios[mini.ordem[mini.arrasta]]);
-            for (int i = 0; i < 4; i++) {
-                DrawCircle((int)noEsq(i).x, (int)noEsq(i).y, 22, WHITE);
-                DrawCircle((int)noEsq(i).x, (int)noEsq(i).y, 18, fios[mini.ordem[i]]);
-                DrawCircle((int)noDir(i).x, (int)noDir(i).y, 22, WHITE);
-                DrawCircle((int)noDir(i).x, (int)noDir(i).y, 18, fios[i]);
-            }
-            if (mini.flash > 0) DrawText("Cor errada! -2s", 560, 510, 20, (Color){255, 100, 100, 255});
+            DrawCircleV(mini.fPos[0], 15.0f, Fade((Color){70, 210, 255, 255}, 0.3f));
+            DrawCircleV(mini.fPos[0], 10.0f, (Color){100, 230, 255, 255});
+            Rectangle raquete = {mini.escudo.x - 58.0f, a.y + a.height - 36.0f, 116.0f, 14.0f};
+            DrawRectangleRounded(raquete, 0.5f, 8, (Color){80, 200, 255, 255});
+            DrawRectangleLinesEx(raquete, 1.5f, WHITE);
+            textoCentro(TextFormat("Terminais: %d/4", mini.acertos), 640, 492, 18, WHITE);
+            for (int i = 0; i < MAX_GOLPES; i++)
+                coracao(a.x + 22 + i * 30, a.y + a.height - 18, 8,
+                        i < MAX_GOLPES - mini.golpes ? (Color){240, 60, 80, 255} : (Color){50, 55, 70, 255});
             break;
+        }
         case MINI_DISJUNTOR:
             for (int s = 0; s < 6; s++) {
                 Rectangle rc = discRect(s);
@@ -878,14 +883,20 @@ static void desenharMini(void)
             }
             if (mini.proximo <= 6) textoCentro(TextFormat("Proximo: %d", mini.proximo), 640, 505, 20, YELLOW);
             break;
-        case MINI_GERADOR:
-            textoCentro(TextFormat("Carga: %.0f%%", mini.carga), 640, 300, 28, WHITE);
-            caixa(barraSinc, 0.2f, (Color){12, 20, 34, 255}, (Color){90, 120, 170, 255});
-            DrawRectangle((int)barraSinc.x + 4, (int)barraSinc.y + 4,
-                          (int)((barraSinc.width - 8) * mini.carga / 100.0f), (int)barraSinc.height - 8,
-                          mini.carga < 35 ? (Color){255, 90, 90, 255} : (Color){255, 215, 60, 255});
-            desenharBotao(btnSinc, "GIRAR!", (Color){40, 100, 180, 255});
+        case MINI_GERADOR: {
+            Rectangle a = arenaFaiscas();
+            caixa(a, 0.03f, (Color){10, 16, 30, 255}, (Color){90, 120, 170, 255});
+            for (int i = 0; i < mini.nFaiscas; i++) {
+                DrawCircleV(mini.fPos[i], RAIO_FAISCA + 5.0f, Fade((Color){80, 220, 255, 255}, 0.25f));
+                DrawCircleV(mini.fPos[i], RAIO_FAISCA, (Color){90, 220, 255, 255});
+                DrawCircleV(mini.fPos[i], 4.0f, WHITE);
+            }
+            DrawCircleV(mini.escudo, RAIO_ESCUDO + 5.0f, Fade((Color){110, 240, 150, 255}, 0.28f));
+            DrawCircleV(mini.escudo, RAIO_ESCUDO, (Color){80, 220, 140, 255});
+            DrawCircleLines((int)mini.escudo.x, (int)mini.escudo.y, RAIO_ESCUDO, WHITE);
+            textoCentro(TextFormat("Celulas capturadas: %d/8", mini.acertos), 640, 510, 20, WHITE);
             break;
+        }
         case MINI_TURBINAS:
             for (int i = 0; i < 4; i++) {
                 Rectangle rc = turbRect(i);
@@ -907,6 +918,27 @@ static void desenharMini(void)
                           (int)barraSinc.height + 16, WHITE);
             desenharBotao(btnSinc, "PARAR", (Color){40, 100, 180, 255});
             break;
+        case MINI_ALVOS: {
+            Rectangle a = arenaFaiscas();
+            caixa(a, 0.03f, (Color){10, 16, 30, 255}, mini.flash > 0 ? (Color){255, 80, 80, 255} : (Color){90, 120, 170, 255});
+            for (int i = 0; i < mini.nFaiscas; i++) {
+                if (mini.on[i]) {
+                    DrawCircleV(mini.fPos[i], RAIO_FAISCA + 5.0f, Fade((Color){80, 220, 150, 255}, 0.25f));
+                    DrawCircleV(mini.fPos[i], RAIO_FAISCA, (Color){65, 200, 125, 255});
+                } else {
+                    Color calor = mini.slot[i] > 0 ? (Color){255, 230, 120, 255} : (Color){255, 115, 55, 255};
+                    DrawCircleV(mini.fPos[i], RAIO_FAISCA + 7.0f, Fade(calor, 0.26f));
+                    DrawCircleV(mini.fPos[i], RAIO_FAISCA, calor);
+                    DrawCircleV(mini.fPos[i], 4.0f, WHITE);
+                    textoCentro(TextFormat("%d/2", mini.slot[i]), (int)mini.fPos[i].x, (int)mini.fPos[i].y + 15, 13, WHITE);
+                }
+            }
+            DrawCircleV(mini.escudo, RAIO_ESCUDO + 5.0f, Fade((Color){80, 200, 255, 255}, 0.3f));
+            DrawCircleV(mini.escudo, RAIO_ESCUDO, (Color){80, 200, 255, 255});
+            DrawCircleLines((int)mini.escudo.x, (int)mini.escudo.y, RAIO_ESCUDO, WHITE);
+            textoCentro(TextFormat("Nucleos aterrados: %d/4", mini.acertos), 640, 510, 20, WHITE);
+            break;
+        }
         case MINI_FAISCAS: {
             Rectangle a = arenaFaiscas();
             caixa(a, 0.03f, (Color){10, 16, 30, 255}, mini.flash > 0 ? (Color){255, 80, 80, 255} : (Color){90, 120, 170, 255});

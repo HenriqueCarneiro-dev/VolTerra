@@ -18,6 +18,81 @@ Rectangle turbRect(int i) { return (Rectangle){370.0f + i * 150.0f, 260, 110, 23
 
 Rectangle arenaFaiscas(void) { return (Rectangle){330, 235, 620, 295}; }
 
+
+/* Orbes comuns aos minigames de colisao. */
+static void prepararOrbes(Minigame *g, Rectangle a, int n, float velBase, float variacao)
+{
+    g->nFaiscas = n;
+    for (int i = 0; i < n; i++) {
+        float ang = GetRandomValue(0, 359) * DEG2RAD;
+        float vel = velBase + GetRandomValue(0, (int)(variacao * 10.0f)) / 10.0f;
+        g->fPos[i] = (Vector2){
+            a.x + RAIO_FAISCA + GetRandomValue(0, (int)(a.width - 2 * RAIO_FAISCA)),
+            a.y + RAIO_FAISCA + GetRandomValue(0, (int)(a.height - 2 * RAIO_FAISCA))
+        };
+        g->fVel[i] = (Vector2){cosf(ang) * vel, sinf(ang) * vel};
+    }
+}
+
+static void rebaterOrbe(Minigame *g, int i, Rectangle a, float dt)
+{
+    Vector2 *p = &g->fPos[i];
+    Vector2 *v = &g->fVel[i];
+    p->x += v->x * dt;
+    p->y += v->y * dt;
+    if (p->x < a.x + RAIO_FAISCA) { p->x = a.x + RAIO_FAISCA; v->x = fabsf(v->x); }
+    if (p->x > a.x + a.width - RAIO_FAISCA) { p->x = a.x + a.width - RAIO_FAISCA; v->x = -fabsf(v->x); }
+    if (p->y < a.y + RAIO_FAISCA) { p->y = a.y + RAIO_FAISCA; v->y = fabsf(v->y); }
+    if (p->y > a.y + a.height - RAIO_FAISCA) { p->y = a.y + a.height - RAIO_FAISCA; v->y = -fabsf(v->y); }
+}
+
+static void reposicionarOrbe(Minigame *g, int i, Rectangle a, Vector2 evitar, float distanciaMin)
+{
+    Vector2 p = g->fPos[i];
+    for (int tent = 0; tent < 12; tent++) {
+        p.x = a.x + RAIO_FAISCA + GetRandomValue(0, (int)(a.width - 2 * RAIO_FAISCA));
+        p.y = a.y + RAIO_FAISCA + GetRandomValue(0, (int)(a.height - 2 * RAIO_FAISCA));
+        if (dist(p, evitar) >= distanciaMin) break;
+    }
+    float ang = GetRandomValue(0, 359) * DEG2RAD;
+    float vel = 105.0f + 35.0f * (fase - 1) / 4.0f;
+    g->fPos[i] = p;
+    g->fVel[i] = (Vector2){cosf(ang) * vel, sinf(ang) * vel};
+}
+
+/* Mantem mouse e teclado como alternativas: mover o mouse seleciona mouse;
+   pressionar WASD/setas seleciona teclado, preservando a posicao do jogador. */
+static void moverControleColisao(Minigame *g, Rectangle a, Vector2 m, float dt,
+                                 bool vertical, float yFixo, float margemX)
+{
+    bool esq = IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT);
+    bool dir = IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT);
+    bool cima = vertical && (IsKeyDown(KEY_W) || IsKeyDown(KEY_UP));
+    bool baixo = vertical && (IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN));
+    if (esq || dir || cima || baixo) g->dir = 1.0f;
+
+    Vector2 deltaMouse = GetMouseDelta();
+    if (fabsf(deltaMouse.x) > 0.1f || fabsf(deltaMouse.y) > 0.1f) g->dir = 0.0f;
+
+    if (g->dir > 0.5f) {
+        Vector2 movimento = {(float)dir - (float)esq, (float)baixo - (float)cima};
+        float tamanho = hypotf(movimento.x, movimento.y);
+        if (tamanho > 0.0f) {
+            movimento.x /= tamanho;
+            movimento.y /= tamanho;
+            g->escudo.x += movimento.x * 360.0f * dt;
+            if (vertical) g->escudo.y += movimento.y * 360.0f * dt;
+        }
+    } else {
+        g->escudo.x = m.x;
+        if (vertical) g->escudo.y = m.y;
+    }
+
+    g->escudo.x = lim(g->escudo.x, a.x + margemX, a.x + a.width - margemX);
+    if (vertical) g->escudo.y = lim(g->escudo.y, a.y + RAIO_ESCUDO, a.y + a.height - RAIO_ESCUDO);
+    else g->escudo.y = yFixo;
+}
+
 static void novoAlvo(void)
 {
     int n = GetRandomValue(0, 5);
@@ -43,16 +118,15 @@ void iniciarMinigame(int id, bool blackout)
                                   (variante == 2 ? MINI_ALVOS : MINI_FAISCAS));
 
     switch (mini.tipo) {
-        case MINI_FIOS:
-            mini.tempoMax = 30.0f - 2.0f * f;
-            for (int i = 0; i < 4; i++) { mini.ordem[i] = i; mini.destino[i] = -1; }
-            for (int i = 3; i > 0; i--) {
-                int k = GetRandomValue(0, i);
-                int t = mini.ordem[i];
-                mini.ordem[i] = mini.ordem[k];
-                mini.ordem[k] = t;
-            }
+        case MINI_FIOS: {
+            Rectangle a = arenaFaiscas();
+            mini.tempoMax = 28.0f - 1.5f * f;
+            mini.nFaiscas = 1;
+            mini.escudo = (Vector2){a.x + a.width / 2, a.y + a.height - 34};
+            mini.fPos[0] = (Vector2){a.x + a.width / 2, a.y + 105};
+            mini.fVel[0] = (Vector2){GetRandomValue(-90, 90), 185.0f + 12.0f * f};
             break;
+        }
         case MINI_DISJUNTOR:
             mini.tempoMax = 22.0f - 1.5f * f;
             for (int i = 0; i < 6; i++) mini.slot[i] = i + 1;
@@ -64,10 +138,13 @@ void iniciarMinigame(int id, bool blackout)
             }
             mini.proximo = 1;
             break;
-        case MINI_GERADOR:
-            mini.tempoMax = 16.0f;
-            mini.carga = 10.0f;
+        case MINI_GERADOR: {
+            Rectangle a = arenaFaiscas();
+            mini.tempoMax = 22.0f - 0.8f * f;
+            mini.escudo = (Vector2){a.x + a.width / 2, a.y + a.height / 2};
+            prepararOrbes(&mini, a, 4, 105.0f + 8.0f * f, 45.0f);
             break;
+        }
         case MINI_TURBINAS:
             mini.tempoMax = 15.0f;
             for (int i = 0; i < 4; i++) {
@@ -83,6 +160,14 @@ void iniciarMinigame(int id, bool blackout)
             mini.dir = 1.0f;
             mini.zona = GetRandomValue(25, 75) / 100.0f;
             break;
+        case MINI_ALVOS: {
+            Rectangle a = arenaFaiscas();
+            mini.tempoMax = 24.0f - 0.7f * f;
+            mini.escudo = (Vector2){a.x + a.width / 2, a.y + a.height / 2};
+            prepararOrbes(&mini, a, 4, 92.0f + 8.0f * f, 38.0f);
+            for (int i = 0; i < 4; i++) { mini.slot[i] = 0; mini.on[i] = false; }
+            break;
+        }
         case MINI_FAISCAS: {
             Rectangle a = arenaFaiscas();
             mini.tempoMax = 12.0f + 1.0f * f;
@@ -149,22 +234,42 @@ void atualizarMini(float dt)
 
     switch (g->tipo) {
         case MINI_FIOS: {
-            if (press) {
-                for (int i = 0; i < 4; i++)
-                    if (g->destino[i] < 0 && dist(m, noEsq(i)) < 24) g->arrasta = i;
+            Rectangle a = arenaFaiscas();
+            float raioBola = 10.0f;
+            float yRaquete = a.y + a.height - 36.0f;
+            moverControleColisao(g, a, m, dt, false, yRaquete, 58.0f);
+            g->fPos[0].x += g->fVel[0].x * dt;
+            g->fPos[0].y += g->fVel[0].y * dt;
+            if (g->fPos[0].x < a.x + raioBola) { g->fPos[0].x = a.x + raioBola; g->fVel[0].x = fabsf(g->fVel[0].x); }
+            if (g->fPos[0].x > a.x + a.width - raioBola) { g->fPos[0].x = a.x + a.width - raioBola; g->fVel[0].x = -fabsf(g->fVel[0].x); }
+            if (g->fPos[0].y < a.y + raioBola) { g->fPos[0].y = a.y + raioBola; g->fVel[0].y = fabsf(g->fVel[0].y); }
+
+            Rectangle raquete = {g->escudo.x - 58.0f, yRaquete, 116.0f, 14.0f};
+            if (g->fVel[0].y > 0 && CheckCollisionCircleRec(g->fPos[0], raioBola, raquete)) {
+                float impacto = lim((g->fPos[0].x - g->escudo.x) / 58.0f, -1.0f, 1.0f);
+                float vel = fmaxf(190.0f, hypotf(g->fVel[0].x, g->fVel[0].y));
+                g->fVel[0] = (Vector2){impacto * vel * 0.85f, -fabsf(vel * 0.72f)};
+                g->fPos[0].y = yRaquete - raioBola - 1.0f;
             }
-            if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON) && g->arrasta >= 0) {
-                for (int j = 0; j < 4; j++) {
-                    if (dist(m, noDir(j)) < 28) {
-                        if (g->ordem[g->arrasta] == j) g->destino[g->arrasta] = j;
-                        else { g->flash = 0.4f; g->tempo -= 2.0f; }
-                    }
+
+            for (int i = 0; i < 4; i++) {
+                Vector2 alvo = {420.0f + 140.0f * i, a.y + 58.0f};
+                if (!g->on[i] && CheckCollisionCircles(g->fPos[0], raioBola, alvo, 24.0f)) {
+                    g->on[i] = true;
+                    g->acertos++;
+                    g->fVel[0].y = fabsf(g->fVel[0].y);
+                    tocar(sndClique);
+                    if (g->acertos >= 4) { terminarMini(1); return; }
+                    break;
                 }
-                g->arrasta = -1;
             }
-            int ok = 0;
-            for (int i = 0; i < 4; i++) if (g->destino[i] >= 0) ok++;
-            if (ok == 4) terminarMini(1);
+            if (g->fPos[0].y > a.y + a.height + raioBola) {
+                g->golpes++;
+                if (g->golpes >= MAX_GOLPES) { terminarMini(2); return; }
+                g->fPos[0] = (Vector2){a.x + a.width / 2, a.y + 105};
+                g->fVel[0] = (Vector2){GetRandomValue(-90, 90), 185.0f + 12.0f * (fase - 1)};
+                g->flash = 0.35f;
+            }
             break;
         }
         case MINI_DISJUNTOR:
@@ -185,12 +290,20 @@ void atualizarMini(float dt)
                 }
             }
             break;
-        case MINI_GERADOR:
-            if (IsKeyPressed(KEY_SPACE) || clicou(btnSinc)) g->carga += 8.0f;
-            g->carga -= (8.0f + 1.5f * (fase - 1)) * dt;
-            g->carga = lim(g->carga, 0.0f, 100.0f);
-            if (g->carga >= 100.0f) terminarMini(1);
+        case MINI_GERADOR: {
+            Rectangle a = arenaFaiscas();
+            moverControleColisao(g, a, m, dt, true, 0.0f, RAIO_ESCUDO);
+            for (int i = 0; i < g->nFaiscas; i++) {
+                rebaterOrbe(g, i, a, dt);
+                if (dist(g->fPos[i], g->escudo) < RAIO_ESCUDO + RAIO_FAISCA + 2.0f) {
+                    g->acertos++;
+                    tocar(sndClique);
+                    reposicionarOrbe(g, i, a, g->escudo, RAIO_ESCUDO + RAIO_FAISCA + 70.0f);
+                    if (g->acertos >= 8) { terminarMini(1); return; }
+                }
+            }
             break;
+        }
         case MINI_TURBINAS:
             for (int i = 0; i < 4; i++) {
                 g->calor[i] += g->taxa[i] * dt;
@@ -215,13 +328,38 @@ void atualizarMini(float dt)
                 }
             }
             break;
+        case MINI_ALVOS: {
+            Rectangle a = arenaFaiscas();
+            moverControleColisao(g, a, m, dt, true, 0.0f, RAIO_ESCUDO);
+            for (int i = 0; i < g->nFaiscas; i++) {
+                if (g->on[i]) continue;
+                rebaterOrbe(g, i, a, dt);
+                float d = dist(g->fPos[i], g->escudo);
+                if (d < RAIO_ESCUDO + RAIO_FAISCA) {
+                    float nx = d > 0.001f ? (g->fPos[i].x - g->escudo.x) / d : 1.0f;
+                    float ny = d > 0.001f ? (g->fPos[i].y - g->escudo.y) / d : 0.0f;
+                    float vel = fmaxf(115.0f, hypotf(g->fVel[i].x, g->fVel[i].y));
+                    g->fVel[i] = (Vector2){nx * vel, ny * vel};
+                    g->fPos[i] = (Vector2){g->escudo.x + nx * (RAIO_ESCUDO + RAIO_FAISCA + 2.0f),
+                                           g->escudo.y + ny * (RAIO_ESCUDO + RAIO_FAISCA + 2.0f)};
+                    g->slot[i]++;
+                    tocar(sndTick);
+                    if (g->slot[i] >= 2) {
+                        g->on[i] = true;
+                        g->acertos++;
+                        tocar(sndOk);
+                        if (g->acertos >= 4) { terminarMini(1); return; }
+                    }
+                }
+            }
+            break;
+        }
         case MINI_FAISCAS: {
             Rectangle a = arenaFaiscas();
             if (g->invul > 0) g->invul -= dt;
 
             /* o escudo segue o mouse, preso dentro da arena */
-            g->escudo.x = lim(m.x, a.x + RAIO_ESCUDO, a.x + a.width - RAIO_ESCUDO);
-            g->escudo.y = lim(m.y, a.y + RAIO_ESCUDO, a.y + a.height - RAIO_ESCUDO);
+            moverControleColisao(g, a, m, dt, true, 0.0f, RAIO_ESCUDO);
 
             for (int i = 0; i < g->nFaiscas; i++) {
                 g->fPos[i].x += g->fVel[i].x * dt;
