@@ -137,15 +137,14 @@ void atualizar(float dt)
         }
 
         case TELA_AJUDA:
-            if (paginaAjuda > 0 && clicou(btnAnt)) {
+            if (paginaAjuda > 0 && (clicou(btnAjudaAnt) || IsKeyPressed(KEY_LEFT))) {
                 paginaAjuda--;
+            } else if (clicou(btnAjudaProx) || IsKeyPressed(KEY_RIGHT)) {
+                if (paginaAjuda < 2) paginaAjuda++;
+                else if (clicou(btnAjudaProx)) tela = TELA_MENU;   /* "Concluir" */
             }
 
-            if (paginaAjuda < 2 && clicou(btnProx)) {
-                paginaAjuda++;
-            }
-
-            if (clicou(btnVoltar) || IsKeyPressed(KEY_ESCAPE)) {
+            if (clicou(btnAjudaMenu) || IsKeyPressed(KEY_ESCAPE)) {
                 tela = TELA_MENU;
             }
             break;

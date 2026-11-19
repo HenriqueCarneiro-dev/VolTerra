@@ -1,6 +1,19 @@
-CC = gcc
-CFLAGS = -Wall -std=c99
-LIBS = -lraylib -lopengl32 -lgdi32 -lwinmm
+CC      = gcc
+CFLAGS  = -Wall -Wextra -std=c99 -O2
+LDFLAGS = -lraylib -lopengl32 -lgdi32 -lwinmm
+SRC     = $(wildcard src/*.c)
+OBJ     = $(SRC:.c=.o)
+TARGET  = volterra.exe
 
-all:
-    $(CC) src/main.c -o volterra.exe $(CFLAGS) $(LIBS)
+all: $(TARGET)
+
+$(TARGET): $(OBJ)
+	$(CC) $(OBJ) -o $@ $(LDFLAGS)
+
+src/%.o: src/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	del /Q src\*.o $(TARGET)
+
+.PHONY: all clean

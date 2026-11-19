@@ -516,40 +516,192 @@ static void desenharFases(void)
 }
 
 
+#define AJ_AMARELO ((Color){255, 214, 10, 255})
+#define AJ_VERDE   ((Color){34, 205, 130, 255})
+#define AJ_VERM    ((Color){235, 75, 75, 255})
+#define AJ_LARANJA ((Color){255, 150, 30, 255})
+#define AJ_TEXTO   ((Color){235, 240, 250, 255})
+#define AJ_SUAVE   ((Color){140, 155, 185, 255})
+#define AJ_ESCURO  ((Color){22, 27, 50, 255})
+
+static bool sobre(Rectangle r)
+{
+    return CheckCollisionPointRec(GetMousePosition(), r);
+}
+
+/* Texto alinhado a direita em xDir. */
+static void textoDir(Font f, const char *s, float xDir, float cy, float tam, float esp, float centro, Color c)
+{
+    float w = MeasureTextEx(f, s, tam, esp).x;
+    textoEsq(f, s, xDir - w, cy, tam, esp, centro, c);
+}
+
+/* Indicador de passos: 01 --- 02 --- 03 */
+static void ajudaPassos(int pag)
+{
+    const char *rot[3] = {"EQUILÍBRIO", "MAPA", "BÔNUS"};
+    const float xs[3] = {440.0f, 640.0f, 840.0f};
+    const float y = 240.0f;
+
+    for (int i = 0; i < 2; i++) {
+        Color c = (i < pag) ? AJ_VERDE : Fade(AJ_SUAVE, 0.35f);
+        DrawLineEx((Vector2){xs[i] + 20.0f, y}, (Vector2){xs[i + 1] - 20.0f, y}, 2.0f, c);
+    }
+
+    for (int i = 0; i < 3; i++) {
+        int x = (int)xs[i];
+        if (i == pag) {
+            DrawCircle(x, (int)y, 22.0f, Fade(AJ_AMARELO, 0.18f));
+            DrawCircle(x, (int)y, 15.0f, AJ_AMARELO);
+            textoFonte(fCorpo, TextFormat("%02d", i + 1), xs[i], y, 12.0f, 0.5f, CENTRO_CORPO, AJ_ESCURO);
+        } else if (i < pag) {
+            DrawCircle(x, (int)y, 15.0f, AJ_VERDE);
+            DrawLineEx((Vector2){xs[i] - 6.0f, y}, (Vector2){xs[i] - 2.0f, y + 4.0f}, 2.5f, AJ_ESCURO);
+            DrawLineEx((Vector2){xs[i] - 2.0f, y + 4.0f}, (Vector2){xs[i] + 6.0f, y - 4.0f}, 2.5f, AJ_ESCURO);
+        } else {
+            DrawCircle(x, (int)y, 15.0f, (Color){14, 22, 46, 255});
+            DrawCircleLines(x, (int)y, 15.0f, Fade(AJ_SUAVE, 0.5f));
+            textoFonte(fCorpo, TextFormat("%02d", i + 1), xs[i], y, 12.0f, 0.5f, CENTRO_CORPO, AJ_SUAVE);
+        }
+        textoFonte(fPeq, rot[i], xs[i], y + 34.0f, 9.5f, 1.2f, CENTRO_CORPO, i == pag ? AJ_AMARELO : AJ_SUAVE);
+    }
+}
+
+/* Passo 1: barra de carga com faixa vermelha / verde / laranja. */
+static void ajudaDemoCarga(float t)
+{
+    const float x0 = 640.0f, w = 430.0f;
+    float v = 55.0f + 50.0f * sinf(t * 0.9f);              /* anima entre 5% e 105% */
+    Color cv = v < 30.0f ? AJ_VERM : (v > 80.0f ? AJ_LARANJA : AJ_VERDE);
+    const char *estado = v < 30.0f ? "Risco de blackout"
+                       : (v > 80.0f ? "Risco de sobrecarga" : "Rede estável");
+
+    textoEsq(fPeq, "CARGA DA REGIÃO", x0, 345.0f, 11.0f, 1.5f, CENTRO_CORPO, AJ_SUAVE);
+    textoDir(fNum, TextFormat("%d%%", (int)v), x0 + w, 345.0f, 26.0f, 1.0f, CENTRO_TITULO, cv);
+
+    float segR = w * 30.0f / 110.0f;                       /* 0..30%   */
+    float segV = w * 50.0f / 110.0f;                       /* 30..80%  */
+    DrawRectangle((int)x0, 372, (int)segR, 8, AJ_VERM);
+    DrawRectangle((int)(x0 + segR), 372, (int)segV, 8, AJ_VERDE);
+    DrawRectangle((int)(x0 + segR + segV), 372, (int)(w - segR - segV) + 1, 8, AJ_LARANJA);
+
+    float px = x0 + w * v / 110.0f;
+    DrawCircle((int)px, 376, 9.0f, WHITE);
+    DrawCircle((int)px, 376, 5.0f, cv);
+
+    textoFonte(fPeq, "0%",   x0,                 396.0f, 10.0f, 0.5f, CENTRO_CORPO, AJ_SUAVE);
+    textoFonte(fPeq, "30%",  x0 + segR,          396.0f, 10.0f, 0.5f, CENTRO_CORPO, AJ_SUAVE);
+    textoFonte(fPeq, "80%",  x0 + segR + segV,   396.0f, 10.0f, 0.5f, CENTRO_CORPO, AJ_SUAVE);
+    textoFonte(fPeq, "110%", x0 + w,             396.0f, 10.0f, 0.5f, CENTRO_CORPO, AJ_SUAVE);
+
+    DrawCircle((int)x0 + 4, 440, 4.0f, cv);
+    textoEsq(fCorpo, estado, x0 + 16.0f, 440.0f, 14.0f, 0.4f, CENTRO_CORPO, cv);
+}
+
+/* Passo 2: cronometro circular + lista de regioes com sobra/falta. */
+static void ajudaDemoMapa(float t)
+{
+    const Vector2 c = {700.0f, 440.0f};
+    int seg = 8 - ((int)t) % 9;                            /* 8..0 */
+    float frac = (float)seg / 8.0f;
+
+    DrawRing(c, 34.0f, 40.0f, 0.0f, 360.0f, 48, Fade(AJ_AMARELO, 0.18f));
+    if (seg > 0) DrawRing(c, 34.0f, 40.0f, -90.0f, -90.0f + 360.0f * frac, 48, AJ_AMARELO);
+    textoFonte(fNum, TextFormat("%02d", seg), c.x, c.y - 3.0f, 28.0f, 1.0f, CENTRO_TITULO, AJ_TEXTO);
+    textoFonte(fPeq, "seg", c.x, c.y + 18.0f, 9.0f, 0.5f, CENTRO_CORPO, AJ_SUAVE);
+
+    const char *nome[3] = {"Norte", "Centro", "Sudeste"};
+    const char *val[3]  = {"+10%", "58%", "-12%"};
+    Color cor[3] = {AJ_VERDE, AJ_AMARELO, AJ_VERM};
+    for (int i = 0; i < 3; i++) {
+        float y = 395.0f + 45.0f * (float)i;
+        DrawCircle(800, (int)y, 4.0f, cor[i]);
+        textoEsq(fCorpoMed, nome[i], 816.0f, y, 15.0f, 0.3f, CENTRO_CORPO, AJ_TEXTO);
+        textoDir(fCorpo, val[i], 1070.0f, y, 15.0f, 0.3f, CENTRO_CORPO, cor[i]);
+    }
+}
+
+/* Passo 3: multiplicador x1..x5 e pontuacao. */
+static void ajudaDemoBonus(float t)
+{
+    int n = 1 + ((int)(t * 1.2f)) % 5;
+
+    textoFonte(fPeq, "MULTIPLICADOR ATUAL", 855.0f, 350.0f, 11.0f, 1.5f, CENTRO_CORPO, AJ_SUAVE);
+    textoFonte(fNum, TextFormat("x%d", n), 855.0f, 420.0f, 56.0f, 1.0f, CENTRO_TITULO, AJ_AMARELO);
+    for (int i = 0; i < 5; i++)
+        DrawCircle(855 + (i - 2) * 26, 480, 8.0f, i < n ? AJ_VERDE : Fade(AJ_SUAVE, 0.35f));
+    textoDir(fCorpo, TextFormat("%d.000", n * 5), 1070.0f, 530.0f, 16.0f, 0.5f, CENTRO_CORPO, AJ_TEXTO);
+}
+
 static void desenharAjuda(void)
 {
-    textoCentro("COMO JOGAR", 640, 40, 44, (Color){255, 215, 60, 255});
-    const char *tit[3] = {"1. Objetivo", "2. Controles", "3. Riscos e minigames"};
-    const char *txt[3][7] = {
-        {"Cada regiao tem uma bateria de 0% a 110%. Mantenha todas entre 30% e 80%.",
-         "Acima de 80%: ALERTA de sobrecarga. Ao chegar em 110%, um minigame dispara.",
-         "Abaixo de 30%: ALERTA de blackout. Ao chegar em 0%, um minigame dispara.",
-         "Um cronometro no mapa mostra quantos segundos faltam para o estouro.",
-         "Setas verdes no mapa indicam sobra de energia; vermelhas indicam falta.",
-         "Sobreviva as 5 fases (4 dias de 30s). Cada fase comeca com uma pausa.",
-         "Sem alertas, o bonus de pontos sobe de x1 ate x5. Qualquer alerta zera o bonus."},
-        {"Clique numa regiao (ou na lista da direita) para seleciona-la.",
-         "Ajuste a producao com W/S, roda do mouse ou botoes + e -. R (ou Reset) volta a 100%.",
-         "Reduza a producao quando a bateria estiver alta; aumente quando estiver baixa.",
-         "Para APOIAR outra regiao: segure o botao numa regiao e arraste ate a outra.",
-         "O apoio tira 10% da origem: entrega 8% a vizinha ou 5% a uma regiao distante.",
-         "Pausa: tecla P ou ESC. No menu de pausa voce ajusta o volume da musica e dos efeitos.",
-         "Regioes novas liberam na fase 2 (4 regioes) e na fase 3 (5 regioes)."},
-        {"Ao atingir 0% ou 110%, voce precisa vencer um minigame para estabilizar.",
-         "Blackout: ligar os fios, religar disjuntores 1 a 6, ou girar o gerador (cliques).",
-         "Sobrecarga: esfriar turbinas, parar o marcador, desligar os alvos, ou desviar das faiscas.",
-         "Vencer estabiliza a regiao e da pontos. Falhar custa um coracao.",
-         "Sem coracoes, o jogo acaba. Voce comeca com 3.",
-         "No fim da partida, digite seu nome: a pontuacao entra no Ranque da fase.",
-         "Dizem que quem nao perde nenhuma vida descobre algo especial..."}
-    };
-    caixa((Rectangle){190, 110, 900, 500}, 0.03f, (Color){14, 26, 48, 245}, (Color){60, 90, 130, 255});
-    textoCentro(tit[paginaAjuda], 640, 135, 30, (Color){120, 200, 255, 255});
-    for (int i = 0; i < 7; i++) DrawText(txt[paginaAjuda][i], 215, 200 + i * 50, 19, RAYWHITE);
-    textoCentro(TextFormat("Pagina %d/3", paginaAjuda + 1), 640, 590, 16, LIGHTGRAY);
-    if (paginaAjuda > 0) desenharBotao(btnAnt, "Anterior", (Color){60, 80, 130, 255});
-    if (paginaAjuda < 2) desenharBotao(btnProx, "Proxima", (Color){60, 80, 130, 255});
-    desenharBotao(btnVoltar, "Menu", (Color){160, 55, 55, 255});
+    float t = (float)GetTime();
+    int pag = paginaAjuda;
+    fundoMenu(t);
+
+    /* voltar ao menu (canto superior esquerdo) */
+    Rectangle bm = btnAjudaMenu;
+    float cm = bm.y + bm.height * 0.5f;
+    DrawCircle((int)(bm.x + 12.0f), (int)cm, 12.0f, sobre(bm) ? WHITE : AJ_AMARELO);
+    setaLinhas(bm.x + 12.0f, cm, 4.5f, true, AJ_ESCURO);
+    textoEsq(fCorpo, "MENU", bm.x + 32.0f, cm, 13.0f, 1.5f, CENTRO_CORPO, AJ_TEXTO);
+
+    /* titulo */
+    float tam = fontesProprias ? 46.0f / CAP_TITULO : 56.0f;
+    textoFonte(fPeq, "TREINAMENTO DE OPERADOR", 640.0f, 60.0f, 11.0f, 2.5f, CENTRO_CORPO, AJ_SUAVE);
+    textoFonte(fTitulo, "COMO JOGAR", 643.0f, 119.0f, tam, 3.0f, CENTRO_TITULO, Fade(BLACK, 0.6f));
+    textoFonte(fTitulo, "COMO JOGAR", 640.0f, 116.0f, tam, 3.0f, CENTRO_TITULO, AJ_AMARELO);
+    textoFonte(fCorpoMed, "Domine a rede em três passos rápidos", 640.0f, 168.0f, 15.0f, 0.3f,
+               CENTRO_CORPO, AJ_TEXTO);
+
+    ajudaPassos(pag);
+
+    /* card */
+    static const char *num[3]   = {"PASSO 01", "PASSO 02", "PASSO 03"};
+    static const char *tit1[3]  = {"Mantenha a rede", "Leia o mapa", "Construa seu"};
+    static const char *tit2[3]  = {"estável", "e o tempo", "multiplicador"};
+    static const char *desc1[3] = {"Cada região possui uma bateria. Mantenha a",
+                                   "Cores mostram onde sobra ou falta energia.",
+                                   "Atravesse as cinco fases sem alertas para"};
+    static const char *desc2[3] = {"carga na faixa segura para evitar alertas.",
+                                   "O cronômetro indica quando a demanda vai mudar.",
+                                   "aumentar seu bônus de pontos."};
+    static const char *dica1[3] = {"Faixa ideal", "Antecipe-se", "Sequência perfeita"};
+    static const char *dica2[3] = {"Entre 30% e 80% você mantém o país operando.",
+                                   "Redistribua energia antes que o tempo termine.",
+                                   "Cada fase limpa aumenta o bônus de x1 até x5."};
+
+    caixa((Rectangle){170, 300, 940, 270}, 0.04f, (Color){10, 18, 40, 235}, (Color){30, 45, 85, 255});
+
+    textoEsq(fPeq, num[pag], 210.0f, 335.0f, 11.0f, 2.0f, CENTRO_CORPO, AJ_AMARELO);
+    textoEsq(fCorpo, tit1[pag], 210.0f, 372.0f, 30.0f, 0.5f, CENTRO_CORPO, AJ_TEXTO);
+    textoEsq(fCorpo, tit2[pag], 210.0f, 408.0f, 30.0f, 0.5f, CENTRO_CORPO, AJ_TEXTO);
+    textoEsq(fCorpoMed, desc1[pag], 210.0f, 452.0f, 15.0f, 0.3f, CENTRO_CORPO, AJ_SUAVE);
+    textoEsq(fCorpoMed, desc2[pag], 210.0f, 476.0f, 15.0f, 0.3f, CENTRO_CORPO, AJ_SUAVE);
+    DrawRectangle(210, 502, 3, 44, AJ_AMARELO);
+    textoEsq(fCorpo, dica1[pag], 224.0f, 514.0f, 13.0f, 0.4f, CENTRO_CORPO, AJ_TEXTO);
+    textoEsq(fCorpoMed, dica2[pag], 224.0f, 534.0f, 12.0f, 0.3f, CENTRO_CORPO, AJ_SUAVE);
+
+    if (pag == 0) ajudaDemoCarga(t);
+    else if (pag == 1) ajudaDemoMapa(t);
+    else ajudaDemoBonus(t);
+
+    /* navegacao */
+    if (pag > 0) {
+        Rectangle ba = btnAjudaAnt;
+        float ca = ba.y + ba.height * 0.5f;
+        Color c = sobre(ba) ? WHITE : AJ_SUAVE;
+        setaLinhas(ba.x + 8.0f, ca, 4.5f, true, c);
+        textoEsq(fCorpoMed, "Anterior", ba.x + 24.0f, ca, 14.0f, 0.3f, CENTRO_CORPO, c);
+    }
+    textoFonte(fPeq, TextFormat("%d / 3", pag + 1), 640.0f, 617.0f, 11.0f, 1.5f, CENTRO_CORPO, AJ_SUAVE);
+
+    Rectangle bp = btnAjudaProx;
+    float cp = bp.y + bp.height * 0.5f;
+    DrawRectangleRounded(bp, 1.0f, 16, sobre(bp) ? (Color){255, 230, 90, 255} : AJ_AMARELO);
+    textoEsq(fCorpo, pag < 2 ? "Próximo" : "Concluir", bp.x + 26.0f, cp, 15.0f, 0.5f, CENTRO_CORPO, AJ_ESCURO);
+    DrawCircle((int)(bp.x + bp.width - 26.0f), (int)cp, 14.0f, AJ_ESCURO);
+    setaLinhas(bp.x + bp.width - 26.0f, cp, 4.5f, false, AJ_AMARELO);
 }
 
 static void desenharTroca(void)
@@ -922,7 +1074,6 @@ void desenhar(void)
             break;
 
         case TELA_AJUDA:
-            desenharFundoMaritimo();
             desenharAjuda();
             break;
 
@@ -931,7 +1082,7 @@ void desenhar(void)
             break;
 
         case TELA_RANK:
-            desenharFundoMaritimo();
+            fundoMenu((float)GetTime());
             desenharRank();
             break;
 
