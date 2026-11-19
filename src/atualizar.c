@@ -104,21 +104,37 @@ void atualizar(float dt)
     }
 
     switch (tela) {
-        case TELA_MENU:
-            if (clicou(btnNovo) || IsKeyPressed(KEY_ENTER)) {
-                novoJogo();
-            } else if (clicou(btnFases)) {
-                tela = TELA_FASES;
-            } else if (clicou(btnRanque)) {
-                abaRank = 0;
-                tela = TELA_RANK;
-            } else if (clicou(btnComo)) {
-                paginaAjuda = 0;
-                tela = TELA_AJUDA;
-            } else if (clicou(btnSair)) {
-                sair = true;
+        case TELA_MENU: {
+            const Rectangle *itens[5] = {&btnNovo, &btnFases, &btnRanque, &btnComo, &btnSair};
+            int anterior = menuSel;
+
+            if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_S)) menuSel = (menuSel + 1) % 5;
+            if (IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_W)) menuSel = (menuSel + 4) % 5;
+
+            Vector2 dm = GetMouseDelta();
+            if (dm.x != 0.0f || dm.y != 0.0f) {
+                for (int i = 0; i < 5; i++) {
+                    if (hover(*itens[i])) menuSel = i;
+                }
+            }
+            if (menuSel != anterior) tocar(sndClique);
+
+            int acao = -1;
+            for (int i = 0; i < 5; i++) {
+                if (clicou(*itens[i])) { acao = i; break; }
+            }
+            if (acao < 0 && (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER))) acao = menuSel;
+
+            switch (acao) {
+                case 0: novoJogo(); break;
+                case 1: tela = TELA_FASES; break;
+                case 2: abaRank = 0; tela = TELA_RANK; break;
+                case 3: paginaAjuda = 0; tela = TELA_AJUDA; break;
+                case 4: sair = true; break;
+                default: break;
             }
             break;
+        }
 
         case TELA_AJUDA:
             if (paginaAjuda > 0 && clicou(btnAnt)) {
@@ -134,7 +150,20 @@ void atualizar(float dt)
             }
             break;
 
-        case TELA_FASES:
+        case TELA_FASES: {
+            int anterior = faseSel;
+
+            if (IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_D)) faseSel = (faseSel + 1) % FASES;
+            if (IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_A)) faseSel = (faseSel + FASES - 1) % FASES;
+
+            Vector2 dm = GetMouseDelta();
+            if (dm.x != 0.0f || dm.y != 0.0f) {
+                for (int i = 0; i < FASES; i++) {
+                    if (hover(btnFase(i))) faseSel = i;
+                }
+            }
+            if (faseSel != anterior) tocar(sndClique);
+
             for (int i = 0; i < FASES; i++) {
                 if (clicou(btnFase(i))) {
                     novoJogoFase(i + 1);
@@ -142,10 +171,16 @@ void atualizar(float dt)
                 }
             }
 
+            if (clicou(btnIniciarFase) || IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) {
+                novoJogoFase(faseSel + 1);
+                return;
+            }
+
             if (clicou(btnVoltarFas) || IsKeyPressed(KEY_ESCAPE)) {
                 tela = TELA_MENU;
             }
             break;
+        }
 
         case TELA_RANK: {
             int nAbas = abasVisiveis();

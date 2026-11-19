@@ -4,6 +4,7 @@
 #include "tipos.h"
 
 /* Funcoes utilitarias (projecao do mapa, mouse, botoes, parametros de fase). */
+Vector2 centroFase(int i);
 Rectangle btnFase(int i);
 Rectangle abaRect(int i, int n);
 int abasVisiveis(void);

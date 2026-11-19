@@ -93,12 +93,14 @@ static void preencher(const Vector2 *v, int n, Color c)
     preencherComGradiente(v, n, ColorBrightness(c, 0.15f), ColorBrightness(c, -0.15f));
 }
 
-void icone(int f, float x, float y, float t, float e)
+static void iconeBase(int f, float x, float y, float t, float e, bool moldura)
 {
     int ix = (int)x, iy = (int)y;
 
-    DrawCircle(ix, iy, 22 * e, Fade((Color){10, 20, 38, 255}, 0.85f));
-    DrawCircleLines(ix, iy, 22 * e, Fade(WHITE, 0.75f));
+    if (moldura) {
+        DrawCircle(ix, iy, 22 * e, Fade((Color){10, 20, 38, 255}, 0.85f));
+        DrawCircleLines(ix, iy, 22 * e, Fade(WHITE, 0.75f));
+    }
 
     switch (f) {
         case 0: {
@@ -187,6 +189,20 @@ void icone(int f, float x, float y, float t, float e)
             break;
         }
     }
+}
+
+void icone(int f, float x, float y, float t, float e)
+{
+    iconeBase(f, x, y, t, e, true);
+}
+
+/* Icone dentro de um circulo com fundo e borda proprios (usado no menu). */
+void iconeMenu(int f, float x, float y, float t, float e, Color fundo, Color borda)
+{
+    float raio = 22.0f * e;
+    DrawCircle((int)x, (int)y, raio, fundo);
+    DrawRing((Vector2){x, y}, raio - 1.5f, raio + 0.5f, 0.0f, 360.0f, 48, borda);
+    iconeBase(f, x, y, t, e, false);
 }
 
 Color corBatVisual(float b)

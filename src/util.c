@@ -3,7 +3,19 @@
 #include "audio.h"
 #include "util.h"
 
-Rectangle btnFase(int i) { return (Rectangle){250.0f + i * 160.0f, 300, 140, 100}; }
+/* Centro de cada fase na tela "Escolher Fase"  */
+Vector2 centroFase(int i)
+{
+    static const Vector2 pos[FASES] = {{297.0f, 381.0f}, {468.5f, 336.0f}, {640.0f, 371.5f}, {811.5f, 334.5f}, {984.0f, 359.5f}};
+    return pos[i];
+}
+
+/* Area de hover/clique do no da fase. */
+Rectangle btnFase(int i)
+{
+    Vector2 c = centroFase(i);
+    return (Rectangle){c.x - 40.0f, c.y - 40.0f, 80.0f, 80.0f};
+}
 
 Rectangle abaRect(int i, int n)
 {

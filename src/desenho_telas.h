@@ -5,5 +5,7 @@
 
 /* Desenho das telas (menu, fases, ajuda, ranking, pausa, config...). */
 void desenhar(void);
+void carregarFontesMenu(void);
+void descarregarFontesMenu(void);
 
 #endif /* DESENHO_TELAS_H */

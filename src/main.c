@@ -16,6 +16,7 @@ int main(void)
     telaVirtual = LoadRenderTexture(W, H);
     SetTextureFilter(telaVirtual.texture, TEXTURE_FILTER_BILINEAR);
 
+    carregarFontesMenu();
     iniciarAudio();
     iniciarRegioes();
     carregarRanking();
@@ -60,6 +61,7 @@ int main(void)
 
     liberarRanking();
     encerrarAudio();
+    descarregarFontesMenu();
     UnloadRenderTexture(telaVirtual);
     CloseWindow();
     return 0;
