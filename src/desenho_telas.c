@@ -386,7 +386,7 @@ static void noFase(int i, bool sel, float pulso)
         DrawCircle((int)c.x, (int)c.y, r + 9.0f, Fade(amarelo, 0.06f + 0.03f * pulso));
         DrawRing(c, r + 5.0f, r + 6.5f, 0.0f, 360.0f, 64, Fade(amarelo, 0.8f));
     }
-    DrawCircleGradient((int)c.x, (int)c.y, r, (Color){40, 58, 102, 255}, (Color){15, 23, 46, 255});
+    DrawCircleGradient(c, r, (Color){40, 58, 102, 255}, (Color){15, 23, 46, 255});
     DrawRing(c, r - 1.5f, r, 0.0f, 360.0f, 64, sel ? Fade(amarelo, 0.9f) : (Color){72, 92, 142, 255});
 
     /* ponto satelite no canto superior direito */
@@ -849,7 +849,6 @@ static void desenharMini(void)
                          f < 0.25f ? (Color){255, 80, 80, 255} : (Color){70, 225, 140, 255});
     textoCentro(TextFormat("%.1fs", fmaxf(mini.tempo, 0.0f)), 640, 564, 18, WHITE);
 
-    Vector2 m = mouseVirtual();
     switch (mini.tipo) {
         case MINI_FIOS: {
             Rectangle a = arenaFaiscas();

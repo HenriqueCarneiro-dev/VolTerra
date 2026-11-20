@@ -6,7 +6,7 @@ Você é o operador da rede elétrica do Brasil. Ajuste a produção de cada reg
 
 Projeto da disciplina **Programação Imperativa e Funcional 2026.2**, CESAR School.
 
-> 🎬 **Vídeo de demonstração:** [ADICIONE AQUI O LINK DO VÍDEO](#)
+> 🎬 **Vídeo de demonstração:** [https://youtu.be/Gso6EckNkfI](#)
 
 <!-- Exemplo de capturas de tela (coloque as imagens em docs/ e descomente):
 ![Menu](docs/menu.png) ![Partida](docs/jogo.png) -->
